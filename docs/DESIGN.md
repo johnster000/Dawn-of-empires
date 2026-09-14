@@ -6,20 +6,27 @@ of villagers, build an economy, climb through four ages of technology and defeat
 (20–40 minutes), on a laptop or a phone, with no install and no account.
 
 ## Pillars
-1. **Readable at a glance.** Warm painterly vector art, strong team colours, one silhouette per unit type. Every
+1. **Readable at a glance.** Outlined, hard-edged sprites, strong team colours, one silhouette per unit type. Every
    building changes with the age so a glance at a base tells you where an opponent stands.
 2. **Honest opponents.** Bots use the same units, costs and rules as the player. Difficulty changes their targets and
    tempo (and a small gather modifier), never what they are allowed to do.
 3. **The classic loop, trimmed.** Villagers, drop-offs, houses, ages, counters and sieges are all here; naval warfare,
    diplomacy, trade and relic hunting are not. Fewer systems, each one finished.
-4. **Cozy, not grim.** Cycle Start Studios' house style: dark stone panels, gold trim, parchment text, serif type.
-   Combat is brisk and bloodless (a fallen soldier fades; a razed building leaves rubble).
+4. **Old-school, not grim.** Menus in the studio's house style; the world in grainy, pre-rendered-looking
+   sprites. Combat is brisk and bloodless (a fallen soldier fades; a razed building leaves rubble).
 
 ## Art direction
-Same palette family as Pocket Dungeons (`--panel #1c1720`, `--gold #c9962e`, `--text #e8dcc4`) but smooth vector
-shapes instead of pixels: soft ellipse canopies, three-face boxes with gabled roofs, gentle ground mottling, blurred
-fog edges. The ground is a single painted texture stretched onto the isometric grid; every tree and building is
-vector-drawn once per zoom step and stamped as a sprite, so the world can hold thousands of objects.
+Two different registers, on purpose:
+
+- **Interface** — Cycle Start Studios' house style shared with Pocket Dungeons: dark stone panels, gold trim,
+  parchment text, serif capitals (`--panel #1c1720`, `--gold #c9962e`, `--text #e8dcc4`).
+- **The world** — late-nineties pre-rendered strategy graphics. Everything is still drawn procedurally, but a
+  post-process makes it read like scanned 256-colour sprites: hard alpha (no anti-aliased fringes), film grain,
+  channel posterisation, a one-pixel dark outline, and translucent shadows cast to the lower right from a key light
+  in the upper left. Walls and roofs carry material textures per age (plank/thatch, plaster-and-timber/shingle,
+  stone/tile, ashlar/slate). The ground is one grainy texture with soft dirt patches, stretched onto the isometric
+  grid with nearest-neighbour sampling; fog of war uses the same hard tile diamonds. Sprites are rasterised at one
+  texel per CSS pixel and stamped without smoothing, so zooming in reveals chunky pixels rather than blur.
 
 ## Systems as implemented
 

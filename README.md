@@ -6,7 +6,8 @@ outlast every rival on the map.
 
 **Play it:** open `index.html` in any modern browser, or serve the folder with any static server
 (`python3 -m http.server`). Pure HTML5 / JavaScript: no build step, no dependencies, no external assets. Every tree,
-building and soldier is drawn procedurally from palettes at runtime. Works on desktop (mouse + keyboard) and on
+building and soldier is drawn procedurally at runtime, then run through a grain-and-posterise pass so the world
+looks like the pre-rendered sprites of a late-nineties strategy game. Works on desktop (mouse + keyboard) and on
 phones and tablets (tap, drag, pinch).
 
 ## What's in the box

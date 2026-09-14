@@ -21,7 +21,7 @@ const Renderer = {
   /* Precompute per-tile colours and paint the whole ground into one texture (TP px per tile).
      Drawing it with the isometric affine transform maps each square tile onto its diamond exactly,
      so the entire terrain costs a single drawImage per frame. */
-  TP: 16,
+  TP: 20,
   prepareMap() {
     const w = World.w, h = World.h, T = World.T, n = w * h, TP = this.TP;
     this.tileColor = new Array(n); this.tileDeco = new Uint8Array(n);
@@ -39,20 +39,41 @@ const Renderer = {
       this.tileColor[i] = c;
       const x = i % w, y = Math.floor(i / w);
       const hsh = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-      this.tileDeco[i] = t === 0 ? (hsh % 9 === 0 ? 1 : hsh % 23 === 0 ? 2 : 0) : 0;
+      this.tileDeco[i] = t === 0 ? (hsh % 14 === 0 ? 1 : hsh % 29 === 0 ? 2 : 0) : 0;
     }
-    // ground texture
+    // ground texture: per-texel grain, dirt patches and a limited palette, like a scanned 256-colour tileset
     const tex = this.terrainTex = document.createElement('canvas'); tex.width = w * TP; tex.height = h * TP;
     const tg = tex.getContext('2d');
+    const img = tg.createImageData(w * TP, h * TP), d = img.data;
+    const nDirt = RNG.noise(Game.seed + 77, 5), nFine = RNG.noise(Game.seed + 91, 1.7), nShade = RNG.noise(Game.seed + 23, 6);
+    const dirt = T.dirt ? U.hex(T.dirt) : null, W = w * TP, ground = T.ground.map(U.hex), shoreRGB = U.hex(T.shore), waterA = U.hex(T.waterDeep), waterB = U.hex(T.water);
+    let seed = (Game.seed ^ 0xabcdef) >>> 0;
     for (let i = 0; i < n; i++) {
-      const x = i % w, y = Math.floor(i / w), c = this.tileColor[i], t = World.tiles[i];
-      tg.fillStyle = c; tg.fillRect(x * TP, y * TP, TP, TP);
-      // soft mottling so the ground reads as painted, not flat
-      for (let k = 0; k < 4; k++) { tg.fillStyle = U.alpha(k % 2 ? '#000000' : '#ffffff', t === 1 ? 0.05 : 0.07); const px = x * TP + rng() * TP, py = y * TP + rng() * TP; tg.beginPath(); tg.arc(px, py, 1.5 + rng() * 3, 0, 7); tg.fill(); }
-      if (t === 2) { tg.fillStyle = U.alpha(T.shoreDark, 0.35); tg.beginPath(); tg.arc(x * TP + rng() * TP, y * TP + rng() * TP, 1 + rng() * 2, 0, 7); tg.fill(); }
-      const d = this.tileDeco[i];
-      if (d === 1) { tg.strokeStyle = U.alpha(U.shade(c, -0.3), 0.75); tg.lineWidth = 1.2; tg.beginPath(); for (let k = -1; k <= 1; k++) { tg.moveTo(x * TP + TP / 2 + k * 3, y * TP + TP / 2 + 3); tg.lineTo(x * TP + TP / 2 + k * 4.5, y * TP + TP / 2 - 5); } tg.stroke(); }
-      else if (d === 2) { tg.fillStyle = T.id === 'tundra' ? '#c7d3da' : ['#e8d07a', '#e2e6ea', '#d98aa8'][(x + y) % 3]; tg.beginPath(); tg.arc(x * TP + 5, y * TP + 6, 1.6, 0, 7); tg.arc(x * TP + 11, y * TP + 11, 1.4, 0, 7); tg.fill(); }
+      const x = i % w, y = Math.floor(i / w), t = World.tiles[i];
+      for (let py = 0; py < TP; py++) for (let px = 0; px < TP; px++) {
+        const fx = x + px / TP, fy = y + py / TP;
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const grain = ((seed >>> 16) % 19) - 9;                       // ±9 per texel
+        const sh = nShade(fx, fy, 3), fine = (nFine(fx, fy, 2) - 0.5) * (t === 1 ? 20 : 30);
+        let r, g, b;
+        if (t === 1) { const k = U.clamp(sh, 0, 1); r = waterA[0] + (waterB[0] - waterA[0]) * k; g = waterA[1] + (waterB[1] - waterA[1]) * k; b = waterA[2] + (waterB[2] - waterA[2]) * k; }
+        else {
+          const kk = U.clamp(sh, 0, 0.999) * (ground.length - 1), i0 = Math.floor(kk), f = kk - i0, c0 = ground[i0], c1 = ground[Math.min(ground.length - 1, i0 + 1)];
+          r = c0[0] + (c1[0] - c0[0]) * f; g = c0[1] + (c1[1] - c0[1]) * f; b = c0[2] + (c1[2] - c0[2]) * f;
+          if (dirt) { const dv = U.clamp((nDirt(fx, fy, 3) - 0.56) * 5, 0, 0.85); if (dv > 0) { r += (dirt[0] - r) * dv; g += (dirt[1] - g) * dv; b += (dirt[2] - b) * dv; } }
+          if (t === 2) { r += (shoreRGB[0] - r) * 0.55; g += (shoreRGB[1] - g) * 0.55; b += (shoreRGB[2] - b) * 0.55; }
+        }
+        const o = ((y * TP + py) * W + (x * TP + px)) * 4;
+        d[o] = U.clamp(Math.round((r + grain + fine) / 6) * 6, 0, 255); d[o + 1] = U.clamp(Math.round((g + grain + fine) / 6) * 6, 0, 255); d[o + 2] = U.clamp(Math.round((b + grain + fine) / 6) * 6, 0, 255); d[o + 3] = 255;
+      }
+    }
+    tg.putImageData(img, 0, 0);
+    for (let i = 0; i < n; i++) {
+      const x = i % w, y = Math.floor(i / w), t = World.tiles[i], c = this.tileColor[i];
+      if (t === 2 && false) { tg.fillStyle = U.alpha(T.shoreDark, 0.4); for (let k = 0; k < 3; k++) { tg.fillRect(x * TP + Math.floor(rng() * TP), y * TP + Math.floor(rng() * TP), 2, 1); } }
+      const dd = this.tileDeco[i];
+      if (dd === 1) { tg.fillStyle = U.alpha(U.shade(c, -0.22), 0.7); for (let k = -1; k <= 1; k++) { tg.fillRect(x * TP + TP / 2 + k * 3, y * TP + TP / 2 - 2, 1, 4); } }
+      else if (dd === 2) { tg.fillStyle = T.id === 'tundra' ? '#b8c4cb' : ['#d6be6a', '#cfd2d5', '#b87a92'][(x + y) % 3]; tg.fillRect(x * TP + 5, y * TP + 6, 2, 2); tg.fillRect(x * TP + 11, y * TP + 11, 2, 2); }
     }
     // minimap terrain
     this.miniTerrain = document.createElement('canvas'); this.miniTerrain.width = w; this.miniTerrain.height = h;
@@ -140,7 +161,7 @@ const Renderer = {
   drawMapImage(img, ppt, x0, y0, x1, y1) {
     const g = this.g, z = this.cam.zoom, dpr = this.dpr, [ox, oy] = this.toScreen(0, 0, 0);
     g.setTransform(32 * z * dpr, 16 * z * dpr, -32 * z * dpr, 16 * z * dpr, ox * dpr, oy * dpr);
-    g.imageSmoothingEnabled = true;
+    g.imageSmoothingEnabled = false;
     const sx = Math.max(0, x0 - 1), sy = Math.max(0, y0 - 1), ex = Math.min(World.w, x1 + 2), ey = Math.min(World.h, y1 + 2);
     g.drawImage(img, sx * ppt, sy * ppt, (ex - sx) * ppt, (ey - sy) * ppt, sx, sy, ex - sx, ey - sy);
   },
@@ -169,7 +190,10 @@ const Renderer = {
   P(dx, dy, dz) { return [(dx - dy) * 32, (dx + dy) * 16 - (dz || 0)]; },
   poly(pts, fill, stroke, lw) { const g = this.g; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.closePath(); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); } },
   ell(x, y, rx, ry, fill, stroke) { const g = this.g; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.stroke(); } },
-  shadow(x, y, rx, ry, a) { this.ell(x, y, rx, ry, `rgba(10,8,20,${a == null ? 0.28 : a})`); },
+  /* Light comes from the upper left, so shadows fall to the lower right. */
+  castShadow(x, y, len, ry) { const g = this.g; g.fillStyle = this.SHADOW; g.beginPath(); g.ellipse(x + len * 0.45, y + 1, len * 0.7, ry, 0.18, 0, Math.PI * 2); g.fill(); },
+  SHADOW: '#010203', // marker colour: oldSchool() turns it into a translucent shadow
+  shadow(x, y, rx, ry, a) { this.ell(x, y, rx, ry, this.SHADOW); },
   dimIf() { return true; },
 
   /* ---- natural resources: vector art rendered once per look and zoom step, then stamped ---- */
@@ -179,19 +203,18 @@ const Renderer = {
     const key = r.kind + '|' + vq + '|' + lvl + '|' + zq.toFixed(3);
     let sp = this.sprites.get(key);
     if (!sp) {
-      const k = zq * this.dpr, W = Math.ceil(64 * k), H = Math.ceil(80 * k), ax = W / 2, ay = H - 14 * k;
+      const k = this.spriteK(zq), W = Math.ceil(64 * k), H = Math.ceil(84 * k), ax = W / 2, ay = H - 14 * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const fake = { kind: r.kind, x: -0.5, y: -0.5, v: (vq + 0.5) / 6, amount: (lvl + 0.5) / 3, max: 1 };
-      this.drawResourceVector(fake);
+      this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
       sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
-      if (this.sprites.size > 400) this.sprites.clear();
+      if (this.sprites.size > 500) this.sprites.clear();
     }
-    const [sx, sy] = this.toScreen(r.x + 0.5, r.y + 0.5, 0), g = this.g, dpr = this.dpr, sc = (z * dpr) / sp.k;
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.drawImage(sp.cv, sx * dpr - sp.ax * sc, sy * dpr - sp.ay * sc, sp.cv.width * sc, sp.cv.height * sc);
+    const [sx, sy] = this.toScreen(r.x + 0.5, r.y + 0.5, 0);
+    this.stamp(sp, sx, sy);
   },
   drawResourceVector(r) {
     const g = this.g, T = World.T;
@@ -201,7 +224,7 @@ const Renderer = {
     if (r.kind === 'tree') {
       const shape = T.treeShape;
       const canopy = T.canopy[Math.floor(v * T.canopy.length) % T.canopy.length];
-      this.shadow(4, 3, 14 * scale, 6 * scale, 0.25);
+      this.castShadow(0, 0, 26 * scale, 8 * scale);
       if (shape === 'pine') {
         g.fillStyle = T.trunk; g.fillRect(-2, -6 * scale, 4, 8 * scale);
         for (let k = 0; k < 3; k++) { const y = -4 - k * 12 * scale, w = (18 - k * 4) * scale, h = 16 * scale; this.poly([[0, y - h], [w, y], [-w, y]], k % 2 ? canopy : U.shade(canopy, -0.12)); this.poly([[0, y - h], [w * 0.35, y - h * 0.4], [0, y - h * 0.2]], U.shade(canopy, 0.18)); }
@@ -219,7 +242,7 @@ const Renderer = {
     } else if (r.kind === 'stone' || r.kind === 'gold') {
       const base = r.kind === 'gold' ? U.mix(T.rock, '#8a7a4a', 0.35) : T.rock, dark = r.kind === 'gold' ? U.mix(T.rockDark, '#6a5a30', 0.35) : T.rockDark;
       const k = 0.6 + 0.4 * (r.amount / r.max);
-      this.shadow(2, 6, 18, 7, 0.25);
+      this.castShadow(0, 4, 14, 5);
       this.poly([[-16 * k, 4], [-10 * k, -10 * k], [2, -14 * k], [12 * k, -6 * k], [16 * k, 5], [0, 10]], base);
       this.poly([[-16 * k, 4], [-10 * k, -10 * k], [2, -14 * k], [-2, 2]], U.shade(base, 0.2));
       this.poly([[2, -14 * k], [12 * k, -6 * k], [16 * k, 5], [0, 10], [-2, 2]], dark);
@@ -227,7 +250,7 @@ const Renderer = {
       if (r.kind === 'gold') { g.fillStyle = T.gold; for (let i = 0; i < 6; i++) { const a = v * 17 + i * 1.7; g.beginPath(); g.arc(Math.cos(a) * 9, -4 + Math.sin(a) * 5, 2.2, 0, 7); g.fill(); } g.fillStyle = '#fff3b0'; g.fillRect(3, -6, 1.5, 1.5); }
     } else if (r.kind === 'berry') {
       const k = 0.7 + 0.3 * (r.amount / r.max);
-      this.shadow(2, 4, 13, 5, 0.22);
+      this.castShadow(0, 2, 12, 4);
       this.ell(0, -6, 13 * k, 9 * k, T.bush); this.ell(-4, -9, 8 * k, 6 * k, U.shade(T.bush, 0.15)); this.ell(5, -8, 7 * k, 5 * k, U.shade(T.bush, 0.05));
       g.fillStyle = T.berry; for (let i = 0; i < 7; i++) { const a = v * 11 + i * 0.9; g.beginPath(); g.arc(Math.cos(a) * 9 * k, -7 + Math.sin(a) * 5 * k, 1.8, 0, 7); g.fill(); }
     }
@@ -237,26 +260,26 @@ const Renderer = {
   /* ---- buildings: static art cached per look and zoom step; flags and smoke drawn live ---- */
   drawBuilding(b) {
     const g = this.g, p = Game.players[b.owner], age = AGES[b.ageVisual] || AGES[0];
-    if (!b.built) { this.at(b.tx, b.ty, 0); this.footShadow(b); this.drawSite(b, age); return; }
+    if (!b.built) { this.at(b.tx, b.ty, 0); this.drawSite(b, age); return; }
     const z = this.cam.zoom, zq = this.zq(z), s = b.size;
     const grown = b.def.farm ? (b.worker && !b.worker.dead ? 1 : 0) : 0;
     const key = 'b|' + b.type + '|' + b.ageVisual + '|' + b.owner + '|' + grown + '|' + zq.toFixed(3);
     let sp = this.sprites.get(key);
     if (!sp) {
-      const k = zq * this.dpr, hgt = this.height(b) + 70, W = Math.ceil((s * 64 + 48) * k), H = Math.ceil((s * 32 + hgt + 30) * k), ax = W / 2, ay = hgt * k;
+      const k = this.spriteK(zq), hgt = this.height(b) + 70, W = Math.ceil((s * 64 + 72) * k), H = Math.ceil((s * 32 + hgt + 40) * k), ax = W / 2 - 8 * k, ay = hgt * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const fake = { tx: 0, ty: 0, size: s, x: s / 2, y: s / 2, def: b.def, type: b.type, built: true, worker: grown ? { dead: false } : null, owner: b.owner, ageVisual: b.ageVisual };
-      this.at(0, 0, 0); this.footShadow(fake);
+      this.at(0, 0, 0); this.footShadow(fake); this.mat = age;
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
+      this.mat = null; this.oldSchool(cv, 9);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
       sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
-      if (this.sprites.size > 400) this.sprites.clear();
+      if (this.sprites.size > 500) this.sprites.clear();
     }
-    const [sx, sy] = this.toScreen(b.tx, b.ty, 0), dpr = this.dpr, sc = (z * dpr) / sp.k;
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.drawImage(sp.cv, sx * dpr - sp.ax * sc, sy * dpr - sp.ay * sc, sp.cv.width * sc, sp.cv.height * sc);
+    const [sx, sy] = this.toScreen(b.tx, b.ty, 0);
+    this.stamp(sp, sx, sy);
     // live parts
     this.at(b.tx, b.ty, 0);
     const col = p.color.main, sh = b.def.shape;
@@ -267,11 +290,54 @@ const Renderer = {
     else if (sh !== 'farm') this.flag(this.P(s, 0, this.height(b) + 4), col);
     if (sh === 'smithy') { const c = this.P(s * 0.82, s * 0.32, 32); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(s, s * 0.25, 9); this.ell(w[0], w[1], 4, 3, `rgba(255,140,40,${0.6 + 0.3 * Math.sin(this.time * 7)})`); }
   },
+  /* Sprites are rasterised at one texel per CSS pixel (or smaller when zoomed out) and stamped with
+     nearest-neighbour scaling, so zooming in shows chunky pixels the way the old pre-rendered games did. */
+  spriteK(zq) { return Math.min(zq, 1); },
+  /* The "pre-rendered" pass: hard alpha, film grain, a limited palette, and a dark one-pixel outline. */
+  oldSchool(cv, grain) {
+    const g = cv.getContext('2d'), w = cv.width, h = cv.height; if (!w || !h) return;
+    const img = g.getImageData(0, 0, w, h), d = img.data, n = w * h;
+    const solid = new Uint8Array(n); let seed = (w * 7919 + h * 104729) >>> 0; grain = grain == null ? 11 : grain;
+    for (let i = 0; i < n; i++) {
+      const o = i * 4; if (d[o + 3] < 96) { d[o + 3] = 0; continue; }
+      if (d[o] <= 4 && d[o + 1] <= 5 && d[o + 2] <= 6) { d[o] = 10; d[o + 1] = 8; d[o + 2] = 20; d[o + 3] = 115; continue; } // shadow marker
+      d[o + 3] = 255; solid[i] = 1;
+      seed = (seed * 1664525 + 1013904223) >>> 0; const gr = ((seed >>> 16) % (grain * 2 + 1)) - grain;
+      for (let c = 0; c < 3; c++) d[o + c] = U.clamp(Math.round((d[o + c] + gr) / 8) * 8, 0, 255);
+    }
+    for (let i = 0; i < n; i++) {
+      if (!solid[i]) continue; const x = i % w, y = (i - x) / w;
+      if ((x > 0 && !solid[i - 1]) || (x < w - 1 && !solid[i + 1]) || (y > 0 && !solid[i - w]) || (y < h - 1 && !solid[i + w])) { const o = i * 4; d[o] = d[o] * 0.45; d[o + 1] = d[o + 1] * 0.45; d[o + 2] = d[o + 2] * 0.45; }
+    }
+    g.putImageData(img, 0, 0);
+  },
+  stamp(sp, sx, sy) {
+    const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = false;
+    g.drawImage(sp.cv, Math.round(sx * dpr - sp.ax * sc), Math.round(sy * dpr - sp.ay * sc), Math.round(sp.cv.width * sc), Math.round(sp.cv.height * sc));
+  },
   zq(z) { const Z = this.ZOOMS; let i = 0; for (let k = 0; k < Z.length; k++) if (Math.abs(Z[k] - z) < Math.abs(Z[i] - z)) i = k; return Z[i]; },
   footShadow(b) {
     if (b.def.passable) return;
-    const s = b.size, A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
-    this.poly([[A[0], A[1] + 2], [B[0] + 4, B[1] + 2], [C[0], C[1] + 4], [D[0] - 4, D[1] + 2]], 'rgba(10,8,20,0.28)');
+    const s = b.size, h = this.height(b) * 0.55, A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
+    // the footprint plus a wedge thrown to the lower right by the walls
+    this.poly([A, B, [B[0] + h * 0.9, B[1] + h * 0.45], [C[0] + h * 0.9, C[1] + h * 0.45], C, D], this.SHADOW);
+  },
+  /* Material textures painted inside a face quad [top-left, top-right, bottom-right, bottom-left]. */
+  texQuad(q, kind, base) {
+    const g = this.g; g.save(); g.beginPath(); g.moveTo(q[0][0], q[0][1]); for (let i = 1; i < 4; i++) g.lineTo(q[i][0], q[i][1]); g.closePath(); g.clip();
+    const L = (t) => [U.lerp(q[0][0], q[3][0], t), U.lerp(q[0][1], q[3][1], t)], R = (t) => [U.lerp(q[1][0], q[2][0], t), U.lerp(q[1][1], q[2][1], t)];
+    const hgt = Math.max(1, Math.abs(q[3][1] - q[0][1])), wid = Math.max(1, Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]));
+    let seed = Math.floor(Math.abs(q[0][0] * 31 + q[1][1] * 17)) >>> 0; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed >>> 8) / 16777216; };
+    const row = (t, col, lw) => { const a = L(t), b = R(t); g.strokeStyle = col; g.lineWidth = lw || 1; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); };
+    const dark = U.alpha('#000000', 0.28), light = U.alpha('#ffffff', 0.16);
+    if (kind === 'plank') { for (let y = 5; y < hgt; y += 5) row(y / hgt, dark, 1); for (let x = 0.15; x < 1; x += 0.28) { const a = [U.lerp(q[0][0], q[1][0], x), U.lerp(q[0][1], q[1][1], x)], b = [U.lerp(q[3][0], q[2][0], x), U.lerp(q[3][1], q[2][1], x)]; g.strokeStyle = U.alpha('#000', 0.35); g.lineWidth = 1.5; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); } }
+    else if (kind === 'plaster') { g.fillStyle = U.alpha('#000', 0.08); for (let i = 0; i < wid * hgt / 30; i++) g.fillRect(U.lerp(q[0][0], q[1][0], rnd()) + (rnd() - 0.5) * 4, U.lerp(q[0][1], q[3][1], rnd()), 2, 1); for (let x = 0.08; x < 1; x += 0.3) { const a = [U.lerp(q[0][0], q[1][0], x), U.lerp(q[0][1], q[1][1], x)], b = [U.lerp(q[3][0], q[2][0], x), U.lerp(q[3][1], q[2][1], x)]; g.strokeStyle = '#4a3320'; g.lineWidth = 2; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); } row(0.02, '#4a3320', 2); }
+    else if (kind === 'stone' || kind === 'ashlar') { const rh = kind === 'stone' ? 6 : 9; let k = 0; for (let y = rh; y < hgt; y += rh, k++) { row(y / hgt, dark, 1); row((y - 1) / hgt, light, 0.8); const a = L(y / hgt), b = R(y / hgt), pa = L((y - rh) / hgt), pb = R((y - rh) / hgt); for (let x = (k % 2) * 0.5; x < 1; x += 1 / (kind === 'stone' ? 3 : 2)) { g.strokeStyle = dark; g.lineWidth = 1; g.beginPath(); g.moveTo(U.lerp(pa[0], pb[0], x), U.lerp(pa[1], pb[1], x)); g.lineTo(U.lerp(a[0], b[0], x), U.lerp(a[1], b[1], x)); g.stroke(); } } }
+    else if (kind === 'thatch') { g.strokeStyle = U.alpha('#000', 0.22); g.lineWidth = 1; for (let i = 0; i < wid * hgt / 14; i++) { const t = rnd(), x = rnd(); const a = [U.lerp(L(t)[0], R(t)[0], x), U.lerp(L(t)[1], R(t)[1], x)]; const dy = 3 + rnd() * 4; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(a[0] + (q[3][0] - q[0][0]) * dy / hgt, a[1] + dy); g.stroke(); } for (let y = 6; y < hgt; y += 7) row(y / hgt, light, 1); }
+    else if (kind === 'shingle' || kind === 'tile') { for (let y = 4; y < hgt; y += 4) { row(y / hgt, dark, 1); row((y - 1) / hgt, light, 0.7); const a = L(y / hgt), b = R(y / hgt); const step = kind === 'tile' ? 5 : 7, off = ((y / 4) % 2) * step / 2; g.fillStyle = dark; for (let x = off; x < wid; x += step) { const t = x / wid; g.fillRect(U.lerp(a[0], b[0], t), U.lerp(a[1], b[1], t) - 3, 1, 3); } } }
+    else if (kind === 'slate') { for (let y = 5; y < hgt; y += 5) { row(y / hgt, U.alpha('#000', 0.22), 1); row((y - 1) / hgt, U.alpha('#fff', 0.1), 0.7); } }
+    g.restore();
   },
   height(b) { return { 1: 30, 2: 26, 3: 32, 4: 40 }[b.size] * ({ tower: 1.9, keep: 1.5, hall: 1.2, monument: 1.2, farm: 0 }[b.def.shape] || 1); },
   /* A box on the footprint: left face (D-C), right face (C-B), and a flat top. */
@@ -281,6 +347,10 @@ const Renderer = {
     const Cb = P(x1, y1, z0), Db = P(x0, y1, z0), Bb = P(x1, y0, z0);
     this.poly([D, C, Cb, Db], wall);
     this.poly([C, B, Bb, Cb], wallDark);
+    if (this.mat && this.mat.wallMat && h > 8) { this.texQuad([D, C, Cb, Db], this.mat.wallMat, wall); this.texQuad([C, B, Bb, Cb], this.mat.wallMat, wallDark); }
+    // a lit edge along the corner and the top rim, as a renderer with a key light would give
+    const g = this.g; g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 1; g.beginPath(); g.moveTo(D[0], D[1]); g.lineTo(C[0], C[1]); g.lineTo(B[0], B[1]); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.moveTo(C[0], C[1]); g.lineTo(Cb[0], Cb[1]); g.stroke();
     if (top) this.poly([A, B, C, D], top);
     return { A, B, C, D };
   },
@@ -293,6 +363,7 @@ const Renderer = {
     const M1 = P(x0 - o, ym, h + rise), M2 = P(x1 + o, ym, h + rise);
     this.poly([A, B, M2, M1], roofDark);       // far slope
     this.poly([M1, M2, C, D], roof);           // near slope
+    if (this.mat && this.mat.roofMat) { this.texQuad([M1, M2, C, D], this.mat.roofMat, roof); this.texQuad([A, B, M2, M1], this.mat.roofMat, roofDark); }
     // ridge highlight and a few shingle lines
     const g = this.g; g.strokeStyle = U.alpha('#ffffff', 0.18); g.lineWidth = 1.2; g.beginPath(); g.moveTo(M1[0], M1[1]); g.lineTo(M2[0], M2[1]); g.stroke();
     g.strokeStyle = U.alpha('#000000', 0.12); g.lineWidth = 1;
@@ -458,52 +529,73 @@ const Renderer = {
     g.globalAlpha = 0.6;
     const A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
     this.poly([A, B, C, D], ok ? 'rgba(122,201,67,0.45)' : 'rgba(216,72,74,0.45)', ok ? '#7ac943' : '#d8484a', 1.5);
-    if (ok) { const fake = { tx: gh.tx, ty: gh.ty, size: s, x: gh.tx + s / 2, y: gh.ty + s / 2, def: gh.def, type: gh.type, built: true, worker: null, owner: Game.human }; const fn = this['shape_' + gh.def.shape] || this.shape_house; fn.call(this, fake, AGES[Game.players[Game.human].age], Game.players[Game.human]); }
+    if (ok) { const fake = { tx: gh.tx, ty: gh.ty, size: s, x: gh.tx + s / 2, y: gh.ty + s / 2, def: gh.def, type: gh.type, built: true, worker: null, owner: Game.human }; const age = AGES[Game.players[Game.human].age]; this.mat = age; const fn = this['shape_' + gh.def.shape] || this.shape_house; fn.call(this, fake, age, Game.players[Game.human]); this.mat = null; }
     g.globalAlpha = 1;
   },
 
   /* ---- units ---- */
-  drawRing(u) { this.at(u.x, u.y, 0); const c = Game.players[u.owner].color; this.ell(0, 1, 14, 7, U.alpha(c.light, 0.25), c.light); },
+  drawRing(u) { this.at(u.x, u.y, 0); const g = this.g; g.lineWidth = 1.2; this.ell(0, 1, u.def.cls === 'cavalry' ? 16 : 11, u.def.cls === 'cavalry' ? 8 : 5.5, null, '#f4f0e0'); },
   drawUnit(u) {
-    const g = this.g, p = Game.players[u.owner], col = p.color;
-    this.at(u.x, u.y, 0);
-    const sdx = Math.cos(u.face) - Math.sin(u.face); const flip = sdx < 0 ? -1 : 1;
-    const walk = u.moving ? Math.sin(u.anim * 2) : 0;
-    const skin = ['#e8c39e', '#d9a678', '#b57a4b', '#8a5a3a'][u.id % 4];
-    this.shadow(0, 1, u.def.cls === 'cavalry' ? 13 : u.def.cls === 'siege' ? 14 : 7, u.def.cls === 'cavalry' ? 6 : 3.5, 0.3);
+    const z = this.cam.zoom, zq = this.zq(z), p = Game.players[u.owner];
+    const sdx = Math.cos(u.face) - Math.sin(u.face), flip = sdx < 0 ? 1 : 0;
+    const frame = u.moving ? (Math.floor((u.anim * 2) / (Math.PI / 2)) & 3) : 0;
+    const swing = u.swing > 0.15 ? 2 : u.swing > 0 ? 1 : 0;
+    const carry = u.carry.amt > 0 ? u.carry.kind : '';
+    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + zq.toFixed(3);
+    let sp = this.sprites.get(key);
+    if (!sp) {
+      const k = this.spriteK(zq), W = Math.ceil(56 * k), H = Math.ceil(60 * k), ax = W / 2, ay = H - 8 * k;
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
+      this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
+      const walk = [0, 1, 0, -1][frame];
+      this.at(0, 0, 0);
+      this.drawUnitVector(u, p, flip ? -1 : 1, walk, swing === 2 ? 1 : swing === 1 ? 0.5 : 0);
+      this.oldSchool(cv, 8);
+      this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
+      sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
+      if (this.sprites.size > 500) this.sprites.clear();
+    }
+    const [sx, sy] = this.toScreen(u.x, u.y, 0);
+    this.stamp(sp, sx, sy);
+    u.sx = sx; u.sy = sy; u.sh = (u.def.cls === 'cavalry' ? 38 : u.def.cls === 'siege' ? 26 : 30) * z;
+  },
+  /* Vector figure at the origin, feet on y = 0, facing right. About 26 px tall at zoom 1. */
+  drawUnitVector(u, p, flip, walk, swing) {
+    const g = this.g, col = p.color;
+    const skin = ['#d8b48e', '#c99a6c', '#a97448', '#7d5232'][u.id % 4];
+    this.castShadow(0, 0, u.def.cls === 'cavalry' ? 24 : u.def.cls === 'siege' ? 26 : 12, u.def.cls === 'cavalry' ? 5 : 3);
     g.save(); g.scale(flip, 1);
     if (u.def.cls === 'siege') { this.catapult(u, col); g.restore(); return; }
-    let by = 0; // body baseline
-    if (u.def.cls === 'cavalry') { this.horse(0, 0, ['#5a3a22', '#8a6a4a', '#c8b8a0', '#3a3030'][u.id % 4], 1, walk); by = -12; }
-    // legs
-    g.strokeStyle = '#3a2a2a'; g.lineWidth = 2.2; g.lineCap = 'round';
-    if (u.def.cls !== 'cavalry') { g.beginPath(); g.moveTo(-2, by - 8); g.lineTo(-2 + walk * 3, by); g.moveTo(2, by - 8); g.lineTo(2 - walk * 3, by); g.stroke(); }
-    // body
-    const bodyCol = u.def.cls === 'villager' ? U.mix(col.main, '#9a8a70', 0.45) : col.main;
-    g.fillStyle = bodyCol; g.beginPath(); g.roundRect(-4.5, by - 18, 9, 11, 3); g.fill();
-    g.fillStyle = U.alpha('#000', 0.15); g.fillRect(-4.5, by - 10, 9, 3);
-    if (u.def.cls === 'infantry' || u.def.cls === 'cavalry') { g.fillStyle = U.shade(col.dark, -0.1); g.fillRect(-4.5, by - 18, 9, 2.5); }
-    // arms
-    const swing = u.swing > 0 ? Math.sin((0.3 - u.swing) / 0.3 * Math.PI) : 0;
-    g.strokeStyle = skin; g.lineWidth = 2; g.beginPath(); g.moveTo(3.5, by - 16); g.lineTo(6 + swing * 3, by - 10 - swing * 6); g.stroke();
-    // head
-    this.ell(0, by - 21.5, 3.8, 4, skin);
-    // hat / helmet by class and age
-    const age = p.age;
-    if (u.def.cls === 'villager') { g.fillStyle = '#b89a4d'; g.beginPath(); g.ellipse(0, by - 23.5, 6, 2, 0, 0, 7); g.fill(); this.ell(0, by - 24.5, 3.6, 2.2, '#c9ab5d'); }
-    else if (u.def.cls === 'archer') { g.fillStyle = age >= 2 ? '#8a8a90' : '#5a7a3a'; g.beginPath(); g.moveTo(-4, by - 22); g.lineTo(0, by - 29); g.lineTo(4, by - 22); g.closePath(); g.fill(); }
-    else { g.fillStyle = age >= 2 ? '#b8bcc4' : age >= 1 ? '#8a7a5a' : '#6a5a4a'; g.beginPath(); g.arc(0, by - 22.5, 4.3, Math.PI, 0); g.fill(); if (age >= 3) { g.fillStyle = col.light; g.fillRect(-0.8, by - 30, 1.6, 4); } }
-    // weapon
+    let by = 0;
+    if (u.def.cls === 'cavalry') { this.horse(0, 0, ['#4f3220', '#7a5a3c', '#b8a68c', '#332a28'][u.id % 4], 1, walk); by = -12; }
     g.lineCap = 'round';
+    // legs and boots
+    if (u.def.cls !== 'cavalry') { g.strokeStyle = '#3a2c24'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(-1.8, by - 9); g.lineTo(-2 + walk * 3, by); g.moveTo(1.8, by - 9); g.lineTo(2 - walk * 3, by); g.stroke(); }
+    // torso: tunic in team colour (villagers in undyed cloth with a team sash)
+    const bodyCol = u.def.cls === 'villager' ? '#8f7a5a' : col.main;
+    g.fillStyle = bodyCol; g.beginPath(); g.roundRect(-4, by - 19, 8, 10.5, 2.5); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(-4, by - 11, 8, 2.5);
+    g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(-4, by - 19, 3, 8);
+    if (u.def.cls === 'villager') { g.fillStyle = col.main; g.fillRect(-4, by - 15, 8, 2); }
+    if (u.def.cls === 'infantry' || u.def.cls === 'cavalry') { g.fillStyle = p.age >= 2 ? '#9aa0a8' : '#5a4634'; g.fillRect(-4, by - 19, 8, 2.5); }
+    // arms
+    g.strokeStyle = skin; g.lineWidth = 2; g.beginPath(); g.moveTo(3.5, by - 17); g.lineTo(6 + swing * 3, by - 11 - swing * 6); g.stroke();
+    // head and helm
+    this.ell(0, by - 22, 3, 3.3, skin);
+    const age = p.age;
+    if (u.def.cls === 'villager') { g.fillStyle = '#a8894a'; g.beginPath(); g.ellipse(0, by - 23.5, 5.5, 1.8, 0, 0, 7); g.fill(); this.ell(0, by - 24.5, 3.2, 2, '#b89a58'); }
+    else if (u.def.cls === 'archer') { g.fillStyle = age >= 2 ? '#7f858c' : '#4d6a32'; g.beginPath(); g.moveTo(-3.5, by - 22.5); g.lineTo(0, by - 29); g.lineTo(3.5, by - 22.5); g.closePath(); g.fill(); }
+    else { g.fillStyle = age >= 2 ? '#aab0b8' : age >= 1 ? '#7d6e52' : '#5d4d3f'; g.beginPath(); g.arc(0, by - 23, 3.6, Math.PI, 0); g.fill(); g.fillRect(-3.6, by - 23, 7.2, 1.5); if (age >= 3) { g.fillStyle = col.light; g.fillRect(-0.7, by - 30, 1.4, 4.5); } }
+    // weapon or tool
     if (u.type === 'villager') {
-      if (u.carry.amt > 0) { const c = RESOURCE_INFO[u.carry.kind].color; g.fillStyle = c; g.beginPath(); g.roundRect(-9, by - 19, 6, 7, 2); g.fill(); }
-      g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(6 + swing * 3, by - 10 - swing * 6); g.lineTo(8 + swing * 3, by - 20 - swing * 5); g.stroke(); g.fillStyle = '#8a8a90'; g.fillRect(6.5 + swing * 3, by - 22 - swing * 5, 4, 3);
-    } else if (u.type === 'spearman') { g.strokeStyle = '#7a5a3a'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(6, by - 2); g.lineTo(9 + swing * 6, by - 28 - swing * 2); g.stroke(); g.fillStyle = '#c8ccd4'; this.poly([[8 + swing * 6, by - 27 - swing * 2], [10 + swing * 6, by - 33 - swing * 2], [12 + swing * 6, by - 27 - swing * 2]], '#c8ccd4'); this.ell(-6.5, by - 12, 3.5, 4.5, col.dark, '#3a2a1a'); }
-    else if (u.type === 'swordsman' || u.type === 'knight') { g.strokeStyle = '#d0d4dc'; g.lineWidth = 2; g.beginPath(); g.moveTo(6 + swing * 3, by - 10 - swing * 6); g.lineTo(12 + swing * 6, by - 22 - swing * 4); g.stroke(); g.strokeStyle = '#6a4a2a'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(5 + swing * 3, by - 12 - swing * 6); g.lineTo(8 + swing * 3, by - 11 - swing * 6); g.stroke(); this.ell(-6.5, by - 12, 4.2, 5, col.dark, age >= 2 ? '#c8ccd4' : '#3a2a1a'); }
-    else if (u.type === 'horseman') { g.strokeStyle = '#7a5a3a'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(6, by - 4); g.lineTo(12 + swing * 6, by - 26); g.stroke(); this.poly([[11 + swing * 6, by - 25], [13 + swing * 6, by - 31], [15 + swing * 6, by - 25]], '#c8ccd4'); }
-    else if (u.def.cls === 'archer') { g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.8; g.beginPath(); g.arc(7, by - 14, 8, -Math.PI * 0.55, Math.PI * 0.55); g.stroke(); g.strokeStyle = '#d8d0c0'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(7 + 8 * Math.cos(-Math.PI * 0.55), by - 14 + 8 * Math.sin(-Math.PI * 0.55)); g.lineTo(7 + 8 * Math.cos(Math.PI * 0.55), by - 14 + 8 * Math.sin(Math.PI * 0.55)); g.stroke(); g.fillStyle = '#7a5a3a'; g.fillRect(-7, by - 20, 3, 9); }
+      if (u.carry.amt > 0) { const c = RESOURCE_INFO[u.carry.kind].color; g.fillStyle = c; g.beginPath(); g.roundRect(-8.5, by - 20, 5.5, 6.5, 1.5); g.fill(); }
+      g.strokeStyle = '#5a4128'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(6 + swing * 3, by - 11 - swing * 6); g.lineTo(8 + swing * 3, by - 21 - swing * 5); g.stroke(); g.fillStyle = '#8a8f96'; g.fillRect(6.5 + swing * 3, by - 23 - swing * 5, 4, 3);
+    } else if (u.type === 'spearman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(6, by - 2); g.lineTo(9 + swing * 6, by - 29 - swing * 2); g.stroke(); this.poly([[8 + swing * 6, by - 28 - swing * 2], [10 + swing * 6, by - 34 - swing * 2], [12 + swing * 6, by - 28 - swing * 2]], '#c0c6ce'); this.ell(-6.5, by - 13, 3.5, 4.5, col.dark, '#2e2119'); }
+    else if (u.type === 'swordsman' || u.type === 'knight') { g.strokeStyle = '#c8ccd4'; g.lineWidth = 2; g.beginPath(); g.moveTo(6 + swing * 3, by - 11 - swing * 6); g.lineTo(12 + swing * 6, by - 23 - swing * 4); g.stroke(); g.strokeStyle = '#5a4128'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(5 + swing * 3, by - 13 - swing * 6); g.lineTo(8 + swing * 3, by - 12 - swing * 6); g.stroke(); this.ell(-6.5, by - 13, 4.2, 5, col.dark, age >= 2 ? '#c0c6ce' : '#2e2119'); }
+    else if (u.type === 'horseman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(6, by - 4); g.lineTo(12 + swing * 6, by - 27); g.stroke(); this.poly([[11 + swing * 6, by - 26], [13 + swing * 6, by - 32], [15 + swing * 6, by - 26]], '#c0c6ce'); }
+    else if (u.def.cls === 'archer') { g.strokeStyle = '#5a4128'; g.lineWidth = 1.8; g.beginPath(); g.arc(7, by - 15, 8, -Math.PI * 0.55, Math.PI * 0.55); g.stroke(); g.strokeStyle = '#d8d0c0'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(7 + 8 * Math.cos(-Math.PI * 0.55), by - 15 + 8 * Math.sin(-Math.PI * 0.55)); g.lineTo(7 + 8 * Math.cos(Math.PI * 0.55), by - 15 + 8 * Math.sin(Math.PI * 0.55)); g.stroke(); g.fillStyle = '#6a4d30'; g.fillRect(-7, by - 21, 3, 9); }
     g.restore();
-    const [sx, sy] = this.toScreen(u.x, u.y, 0); u.sx = sx; u.sy = sy; u.sh = (u.def.cls === 'cavalry' ? 38 : u.def.cls === 'siege' ? 26 : 30) * this.cam.zoom;
   },
   horse(x, y, col, k, walk) {
     const g = this.g;
@@ -523,7 +615,6 @@ const Renderer = {
     const a = u.swing > 0 ? -1.2 + (0.3 - u.swing) / 0.3 * 1.4 : 0.2;
     g.save(); g.translate(0, -14); g.rotate(a); g.strokeStyle = '#8a6a3a'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(0, 0); g.lineTo(-18, -4); g.stroke(); this.ell(-18, -4, 3.5, 3.5, '#6a6a70'); g.restore();
     g.fillStyle = col.main; g.fillRect(9, -18, 2, 9); this.poly([[11, -18], [17, -16], [11, -13]], col.main);
-    const [sx, sy] = this.toScreen(u.x, u.y, 0); u.sx = sx; u.sy = sy; u.sh = 26 * this.cam.zoom;
   },
 
   drawUnitBar(u) {
@@ -645,7 +736,7 @@ const Renderer = {
     const p = Game.players[owner] || Game.players[0];
     if (kind === 'unit') {
       const def = UNITS[type]; this.cam = { x: 0, y: 0, zoom: def.cls === 'siege' ? 1.1 : 1.15 }; this.W = size; this.H = size * 1.55;
-      const fake = { id: 1, type, def, owner, x: 0, y: 0, face: 0.6, moving: false, anim: 0, swing: 0, carry: { amt: 0 }, hp: 1, maxHp: 1 };
+      const fake = { id: 1, type, def, owner, x: 0, y: 0, face: 0.6, moving: false, anim: 0, swing: 0, carry: { amt: 0, kind: null }, hp: 1, maxHp: 1 };
       this.drawUnit(fake);
     } else {
       const def = BUILDINGS[type]; const s = def.size; const z = size / (s * 64 + 30) * 1.15;
