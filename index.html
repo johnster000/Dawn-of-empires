@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0e0b12">
+  <title>Dawn of Empires</title>
+  <meta name="description" content="An isometric real-time strategy game. Start with three villagers, gather, build, advance through four ages and outlast your rivals. Play free in your browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c1720'/%3E%3Cpath d='M4 24 L16 6 L28 24 Z' fill='%23c9962e'/%3E%3Crect x='12' y='16' width='8' height='8' fill='%231c1720'/%3E%3Ccircle cx='16' cy='9' r='2' fill='%23e8c46a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- in-game interface -->
+  <div id="hud" hidden>
+    <div id="topbar">
+      <div class="res" data-res="food"><span class="ricon"></span><span class="val">0</span></div>
+      <div class="res" data-res="wood"><span class="ricon"></span><span class="val">0</span></div>
+      <div class="res" data-res="stone"><span class="ricon"></span><span class="val">0</span></div>
+      <div class="res" data-res="gold"><span class="ricon"></span><span class="val">0</span></div>
+      <div id="pop" title="Population / housing">0/0</div>
+      <div id="age" title="Current age">Dawn Age</div>
+      <div id="clock">0:00</div>
+      <button id="speed" title="Game speed">»1×</button>
+      <button id="btn-menu" title="Menu (Esc)">☰</button>
+    </div>
+    <div id="monument" hidden></div>
+    <div id="log"></div>
+    <div id="hover" hidden></div>
+    <div id="hint" hidden></div>
+    <div id="bottom">
+      <div id="selpanel" hidden></div>
+      <div id="commands" hidden></div>
+      <div id="right">
+        <canvas id="minimap" width="360" height="360"></canvas>
+        <button id="btn-idle" title="Select the next idle villager (.)">Idle villager</button>
+      </div>
+    </div>
+    <div id="tooltip" hidden></div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- title -->
+  <div id="title" class="screen">
+    <div class="title-art">
+      <a class="studio-link" href="https://www.cyclestartstudios.com" target="_blank" rel="noopener" title="Cycle Start Studios"><img class="studio-logo" src="img/logo.png" alt="Cycle Start Studios" width="160"></a>
+      <h1>Dawn<span class="of">of</span>Empires</h1>
+      <p class="tagline">Three villagers, a patch of forest and four ages to climb.</p>
+    </div>
+    <div class="menu">
+      <button id="btn-new" class="big primary">New Game</button>
+      <button id="btn-howto" class="big">How to Play</button>
+      <button id="btn-sound" class="big">Sounds on</button>
+    </div>
+    <a class="donate" href="https://buymeacoffee.com/cyclestartstudios" target="_blank" rel="noopener">&#9749; Enjoying it? Buy me a coffee</a>
+    <p class="footer">No ads, no purchases, no timers.</p>
+  </div>
+
+  <!-- game setup -->
+  <div id="setup" class="screen" hidden>
+    <div class="panel">
+      <h2>New Game</h2>
+      <div class="form">
+        <label>Map size <select id="set-size"></select></label>
+        <label>Terrain <select id="set-terrain"></select></label>
+        <p id="terrain-blurb" class="blurb"></p>
+        <label>Rivals <select id="set-enemies"></select></label>
+        <label>Difficulty <select id="set-difficulty"></select></label>
+        <label>Starting resources <select id="set-resources"></select></label>
+        <label>Starting age <select id="set-age"></select></label>
+        <label>Population cap <select id="set-pop"></select></label>
+        <label>Game speed <select id="set-speed"></select></label>
+        <label>Your colour <select id="set-color"></select></label>
+        <label class="check"><input type="checkbox" id="set-reveal"> Reveal the whole map</label>
+        <label>Map seed <span class="seedrow"><input type="text" id="set-seed" placeholder="random" maxlength="24" autocomplete="off"><button id="btn-random-seed" type="button" title="Random seed">⟲</button></span></label>
+      </div>
+      <div class="row">
+        <button id="btn-setup-back" class="big">Back</button>
+        <button id="btn-begin" class="big primary">Begin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- how to play -->
+  <div id="howto" class="screen" hidden>
+    <div class="panel wide">
+      <h2>How to Play</h2>
+      <div class="howto-cols">
+        <section>
+          <h3>The idea</h3>
+          <p>You start with a Town Hall and three villagers. Gather <b>food</b>, <b>wood</b>, <b>stone</b> and <b>gold</b>, build houses and workshops, raise an army, and advance through the <b>Dawn</b>, <b>Hearth</b>, <b>Forge</b> and <b>Empire</b> ages. Each age unlocks stronger soldiers, new buildings and technologies. Win by destroying every rival's buildings and villagers, or by finishing a <b>Monument</b> and holding it for five minutes.</p>
+          <h3>Economy</h3>
+          <p>Right-click a tree, bush or deposit with villagers selected to gather. They carry loads back to the nearest drop-off: the Town Hall, or a Granary, Lumber Camp or Mining Camp built next to the resource. Berries run out, so build <b>Farms</b>; one villager works each farm forever. Every five people need a <b>House</b>.</p>
+          <h3>Ages</h3>
+          <p>Select the Town Hall and choose <b>Advance</b>. Each age needs two different buildings from the age before it and a stock of food and gold. Buildings change their look as you climb.</p>
+        </section>
+        <section>
+          <h3>Fighting</h3>
+          <p>Spearmen beat horses, horses beat archers, archers beat spearmen. Swordsmen and knights are the heavy hitters of the Forge Age; catapults flatten buildings in the Empire Age. Idle soldiers fight back on their own; use <b>Attack move</b> to advance while engaging anything met on the way. Watchtowers and Keeps shoot at anything hostile within range. The Blacksmith upgrades weapons and armour; the Hall of Scholars improves the economy.</p>
+          <h3>Controls</h3>
+          <table class="keys">
+            <tr><td>Select</td><td>Left click, or drag a box. Shift adds. Double-click selects all of a type on screen.</td></tr>
+            <tr><td>Command</td><td>Right click: move, gather, build, repair or attack depending on the target. Right-click with a building selected sets its rally point.</td></tr>
+            <tr><td>Camera</td><td>Arrow keys, middle-drag or space-drag, mouse wheel to zoom. Click the minimap to jump.</td></tr>
+            <tr><td>Hotkeys</td><td>The letter on each command button (Q W E R T Y / A S D F G / Z X C V B). <b>H</b> Town Hall · <b>.</b> next idle villager · <b>Enter</b> last event · <b>Ctrl+1–9</b> save a group, <b>1–9</b> recall · <b>Delete</b> remove selected · <b>Esc</b> cancel / menu.</td></tr>
+            <tr><td>Touch</td><td>Tap to select, tap the ground or a target to command, drag to pan, pinch to zoom.</td></tr>
+          </table>
+        </section>
+      </div>
+      <div class="row"><button id="btn-howto-back" class="big primary">Back</button></div>
+    </div>
+  </div>
+
+  <!-- pause -->
+  <div id="pause" class="screen" hidden>
+    <div class="panel narrow">
+      <h2>Paused</h2>
+      <div class="menu">
+        <button id="btn-resume" class="big primary">Resume</button>
+        <button id="btn-pause-howto" class="big">How to Play</button>
+        <button id="btn-pause-sound" class="big">Sounds on</button>
+        <button id="btn-restart" class="big">Restart with same settings</button>
+        <button id="btn-quit" class="big">Quit to title</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- victory / defeat -->
+  <div id="end" class="screen" hidden>
+    <div class="panel">
+      <h2 id="end-title">Victory</h2>
+      <p id="end-reason" class="blurb"></p>
+      <table id="end-stats" class="stats"></table>
+      <p id="end-time" class="muted"></p>
+      <div class="row">
+        <button id="btn-end-continue" class="big">Keep playing</button>
+        <button id="btn-end-again" class="big primary">Play again</button>
+        <button id="btn-end-title" class="big">Title</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/core/util.js"></script>
+<script src="js/core/rng.js"></script>
+<script src="js/data/ages.js"></script>
+<script src="js/data/terrains.js"></script>
+<script src="js/data/buildings.js"></script>
+<script src="js/data/units.js"></script>
+<script src="js/data/techs.js"></script>
+<script src="js/engine/audio.js"></script>
+<script src="js/engine/renderer.js"></script>
+<script src="js/engine/input.js"></script>
+<script src="js/game/world.js"></script>
+<script src="js/game/entities.js"></script>
+<script src="js/game/ai.js"></script>
+<script src="js/game/ui.js"></script>
+<script src="js/game/game.js"></script>
+</body>
+</html>

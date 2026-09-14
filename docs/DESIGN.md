@@ -1,0 +1,85 @@
+# Dawn of Empires — Design Notes
+
+## Elevator pitch
+A browser-native isometric real-time strategy game in the spirit of the late-nineties classics: start with a handful
+of villagers, build an economy, climb through four ages of technology and defeat your rivals. Playable in one sitting
+(20–40 minutes), on a laptop or a phone, with no install and no account.
+
+## Pillars
+1. **Readable at a glance.** Warm painterly vector art, strong team colours, one silhouette per unit type. Every
+   building changes with the age so a glance at a base tells you where an opponent stands.
+2. **Honest opponents.** Bots use the same units, costs and rules as the player. Difficulty changes their targets and
+   tempo (and a small gather modifier), never what they are allowed to do.
+3. **The classic loop, trimmed.** Villagers, drop-offs, houses, ages, counters and sieges are all here; naval warfare,
+   diplomacy, trade and relic hunting are not. Fewer systems, each one finished.
+4. **Cozy, not grim.** Cycle Start Studios' house style: dark stone panels, gold trim, parchment text, serif type.
+   Combat is brisk and bloodless (a fallen soldier fades; a razed building leaves rubble).
+
+## Art direction
+Same palette family as Pocket Dungeons (`--panel #1c1720`, `--gold #c9962e`, `--text #e8dcc4`) but smooth vector
+shapes instead of pixels: soft ellipse canopies, three-face boxes with gabled roofs, gentle ground mottling, blurred
+fog edges. The ground is a single painted texture stretched onto the isometric grid; every tree and building is
+vector-drawn once per zoom step and stamped as a sprite, so the world can hold thousands of objects.
+
+## Systems as implemented
+
+### World
+- Square grid, 2:1 isometric projection (64×32 tiles), 8-way A* with corner cutting disallowed.
+- Terrain from value noise: water, shore, ground; four palettes/generation profiles. Edges biased to land so no start
+  is cut off. Each start gets guaranteed forest, stone, gold and berries within 5–12 tiles.
+- Fog of war for the human player (explored / visible per tile), updated three times a second from sight radii.
+- Map sizes 64², 88², 112². Up to six players spaced evenly on a ring.
+
+### Economy
+- Villagers gather ~0.45–0.55 per second, carry 10 (+5 per cart technology), deposit at the nearest matching drop-off.
+- Trees 100 wood, stone and gold 350, berry bushes 125 food. Farms are infinite, one worker each, 2×2, walkable.
+- Builders stack with diminishing returns: rate = (1 + 0.6·(n−1)) / n per builder.
+- Houses +5 population, Town Hall +5, cap configurable 50–200.
+
+### Ages
+| Age | Roof / wall | Advance cost | Requirement |
+| --- | --- | --- | --- |
+| Dawn (I) | thatch / timber | — | — |
+| Hearth (II) | shingle / plaster | 400 food | 2 of Granary, Lumber Camp, Mining Camp, Barracks, Farm |
+| Forge (III) | red tile / stone | 800 food, 200 gold | 2 of Range, Stables, Blacksmith, Watchtower |
+| Empire (IV) | slate / pale stone, gold trim | 1000 food, 700 gold | 2 of Hall of Scholars, Keep, Blacksmith, Watchtower |
+
+### Combat
+- Damage = max(1, attack × bonus − armour). Ranged attacks are projectiles that land ~0.35 s later.
+- Counters: Spearman ×2 vs cavalry; Archers ×1.5 vs infantry; cavalry ×1.5 vs archers and siege; Swordsman ×1.5 and
+  Catapult ×4 vs buildings; Catapult splashes 50% to units within one tile.
+- Idle soldiers acquire targets within sight. Attack-move engages anything met en route and then resumes.
+- Towers and Keeps shoot the nearest enemy unit in range; Fletching upgrades extend them.
+- A player is defeated when they hold no buildings and no villagers. A finished Monument wins after 5 minutes.
+
+### Bot AI (one pass per second)
+1. **Plan** — decide what to save for (the next age once 13+ villagers are up and prerequisites exist).
+2. **Defend** — anything hitting our buildings or villagers pulls in every idle soldier nearby.
+3. **Economy** — train villagers to the difficulty's target; assign idle villagers by a per-age split (food/wood/gold/
+   stone), skewed by what's short; place camps next to far deposits and farms when berries run out.
+4. **Construct** — houses when 4 pop from cap; a scripted order (barracks → camps → range/stables/smith/tower →
+   library/keep → workshop/monument); keep sites staffed; age up when eligible.
+5. **Research** — cheapest useful technology from the surplus above the savings goal.
+6. **Military** — train the best available unit at every military building from surplus; gather at the frontier.
+7. **Attack** — when the army reaches its threshold and the cooldown has passed, attack-move at the nearest enemy
+   building (soft targets and the human preferred), roll to the next target, go home after 2.5 minutes or when
+   reduced to two units.
+
+## Roadmap
+Things deliberately left out of the first release, roughly in the order they should land:
+
+1. **Save and resume** — serialise the whole match to localStorage (entities are plain objects with ids, so this is
+   mostly plumbing) and autosave every minute.
+2. **Walls and gates** — drag-to-place palisade/stone wall segments with connecting art, gates that open for friends.
+3. **Villager safety** — town bell (garrison in the Town Hall), flee from soldiers, auto-repair.
+4. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
+5. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
+6. **Market** — trade one resource for another, tribute to allies.
+7. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
+8. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
+9. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
+10. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
+
+## What is original here
+Names (Dawn/Hearth/Forge/Empire ages, Hall of Scholars, Keep, Monument), all art, sounds, text, balance and code are
+original. The genre conventions (villagers, drop-offs, houses, ages, unit counters) are shared by dozens of games.

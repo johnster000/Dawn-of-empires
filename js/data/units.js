@@ -1,0 +1,28 @@
+/* Units. speed in tiles/second, range in tiles (0 = melee), time in seconds to train.
+   `cls` groups units for technology bonuses. `bonus` multiplies damage against a target class. */
+const UNITS = {
+  villager:  { name: 'Villager',   cls: 'villager', hp: 25,  atk: 3,  armor: 0, range: 0, rate: 1.5, speed: 1.6, sight: 5,
+               cost: { food: 50 }, time: 20, age: 0, from: 'townhall', gather: true,
+               desc: 'Gathers, builds and repairs. The backbone of every empire.' },
+  spearman:  { name: 'Spearman',   cls: 'infantry', hp: 45,  atk: 5,  armor: 1, range: 0, rate: 1.4, speed: 1.5, sight: 5,
+               cost: { food: 50, wood: 25 }, time: 22, age: 0, from: 'barracks', bonus: { cavalry: 2.0 },
+               desc: 'Cheap and steady. Twice as deadly against horses.' },
+  swordsman: { name: 'Swordsman',  cls: 'infantry', hp: 70,  atk: 9,  armor: 2, range: 0, rate: 1.4, speed: 1.4, sight: 5,
+               cost: { food: 60, gold: 25 }, time: 24, age: 2, from: 'barracks', bonus: { building: 1.5 },
+               desc: 'Heavy infantry. Good against everything, strong against buildings.' },
+  archer:    { name: 'Archer',     cls: 'archer',   hp: 30,  atk: 4,  armor: 0, range: 4, rate: 1.6, speed: 1.5, sight: 6,
+               cost: { wood: 40, gold: 30 }, time: 26, age: 1, from: 'range', bonus: { infantry: 1.5 },
+               desc: 'Shoots from a distance. Shreds infantry, but crumbles when horses reach it.' },
+  crossbow:  { name: 'Crossbowman', cls: 'archer',  hp: 40,  atk: 7,  armor: 1, range: 5, rate: 1.7, speed: 1.5, sight: 7,
+               cost: { wood: 45, gold: 45 }, time: 28, age: 2, from: 'range', bonus: { infantry: 1.5 },
+               desc: 'Heavier bolts with a longer reach.' },
+  horseman:  { name: 'Horseman',   cls: 'cavalry',  hp: 60,  atk: 7,  armor: 1, range: 0, rate: 1.3, speed: 2.5, sight: 7,
+               cost: { food: 80, gold: 20 }, time: 28, age: 1, from: 'stables', bonus: { archer: 1.5, siege: 1.5 },
+               desc: 'Fast. Runs down archers and siege before they can react.' },
+  knight:    { name: 'Knight',     cls: 'cavalry',  hp: 110, atk: 12, armor: 2, range: 0, rate: 1.3, speed: 2.3, sight: 7,
+               cost: { food: 80, gold: 75 }, time: 32, age: 2, from: 'stables', bonus: { archer: 1.5, siege: 1.5 },
+               desc: 'Armoured cavalry. The hammer of the Forge Age.' },
+  catapult:  { name: 'Catapult',   cls: 'siege',    hp: 60,  atk: 35, armor: 0, range: 6, rate: 4.0, speed: 0.9, sight: 7,
+               cost: { wood: 160, gold: 130 }, time: 45, age: 3, from: 'workshop', bonus: { building: 4.0 }, splash: 1,
+               desc: 'Slow and fragile, but it turns walls to rubble. Escort it.' },
+};
