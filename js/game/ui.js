@@ -24,7 +24,8 @@ const UI = {
     $('btn-end-title').onclick = () => { Game.quit(); };
     $('btn-end-continue').onclick = () => { this.showScreen(null); Game.paused = false; };
     $('btn-idle').onclick = () => Game.nextIdleVillager();
-    $('speed').onclick = () => { const s = [1, 1.5, 2, 3]; Game.settings.speed = s[(s.indexOf(Game.settings.speed) + 1) % s.length]; this.syncSpeed(); };
+    const cycleSpeed = () => { const s = [1, 1.5, 2, 3]; Game.settings.speed = s[(s.indexOf(Game.settings.speed) + 1) % s.length]; this.syncSpeed(); };
+    $('speed').onclick = cycleSpeed; $('btn-pause-speed').onclick = cycleSpeed;
     for (const b of document.querySelectorAll('.donate')) b.addEventListener('click', (e) => { setTimeout(() => { try { if (!window.open) b.classList.add('blocked'); } catch (err) {} }, 0); });
     this.els.minimap.addEventListener('mousedown', (e) => this.miniClick(e));
     this.els.minimap.addEventListener('mousemove', (e) => { if (e.buttons & 1) this.miniClick(e); });
@@ -37,7 +38,7 @@ const UI = {
     this.showScreen('title');
   },
   syncSound() { const t = Sfx.enabled ? 'Sounds on' : 'Sounds off'; this.$('btn-sound').textContent = t; this.$('btn-pause-sound').textContent = t; },
-  syncSpeed() { this.els.speed.textContent = '»' + Game.settings.speed + '×'; },
+  syncSpeed() { const sp = Game.settings.speed; this.els.speed.textContent = '»' + sp + '×'; this.$('btn-pause-speed').textContent = 'Speed: ' + ({ 1: 'Normal', 1.5: 'Fast', 2: 'Very fast', 3: 'Fastest' }[sp] || sp + '×'); },
   showScreen(id) {
     for (const s of ['title', 'setup', 'howto', 'pause', 'end']) this.els[s].hidden = s !== id;
     this.els.hud.hidden = !Game.running;
