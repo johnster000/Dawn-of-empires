@@ -14,7 +14,7 @@ phones and tablets (tap, drag, pinch).
 
 - **Four ages** — Dawn, Hearth, Forge and Empire. Each one changes the look of every building (thatch → shingle →
   red tile → slate and gold) and unlocks new buildings, units and technologies.
-- **Economy** — berries, forests, stone outcrops and gold veins, plus farms that never run out. Drop-off camps,
+- **Economy** — berries, shore fish, forests, stone outcrops and gold veins, plus farms that never run out. Drop-off camps,
   housing, population caps, rally points, idle-villager cycling.
 - **15 buildings** — Town Hall, House, Farm, Granary, Lumber Camp, Mining Camp, Barracks, Archery Range, Stables,
   Blacksmith, Watchtower, Hall of Scholars, Keep, Siege Workshop and the Monument (an alternative victory).

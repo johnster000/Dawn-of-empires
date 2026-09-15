@@ -8,6 +8,7 @@ const World = {
   bld: null,       // tile -> building or null
   explored: null, visible: null,   // fog for the human player
   starts: [],
+  decals: [],      // stumps and other permanent ground marks
   nextResId: 1,
 
   inBounds(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; },
@@ -38,6 +39,7 @@ const World = {
   removeResource(r) {
     if (r.removed) return;
     r.removed = true;
+    if (r.kind === 'tree') this.decals.push({ kind: 'stump', x: r.x, y: r.y, ox: r.ox, oy: r.oy, v: r.v });
     this.resAt[this.idx(r.x, r.y)] = null;
     const i = this.res.indexOf(r); if (i >= 0) this.res.splice(i, 1);
   },
@@ -62,7 +64,7 @@ const World = {
     this.tiles = new Uint8Array(w * h); this.shade = new Float32Array(w * h);
     this.resAt = new Array(w * h).fill(null); this.bld = new Array(w * h).fill(null);
     this.explored = new Uint8Array(w * h); this.visible = new Uint8Array(w * h);
-    this.res = []; this.starts = []; this.nextResId = 1;
+    this.res = []; this.starts = []; this.decals = []; this.nextResId = 1;
     const players = opts.players;
 
     // Water and ground variation
@@ -92,14 +94,15 @@ const World = {
       const ds = this.startDist(x, y);
       if (ds < 6) continue;
       const f = nForest(x, y);
-      const thresh = 0.62 - (dens - 1) * 0.08 + (ds < 12 ? (12 - ds) * 0.02 : 0);
-      if (f > thresh && rng() < 0.92) this.addRes('tree', x, y, rng);
+      const thresh = 0.6 - (dens - 1) * 0.08 + (ds < 12 ? (12 - ds) * 0.02 : 0);
+      if (f > thresh && rng() < 0.985) this.addRes('tree', x, y, rng);
     }
     // Guaranteed starting resources for every player
     for (const s of this.starts) {
       const dirs = rng.shuffle([0, 1, 2, 3, 4, 5].map((k) => (k / 6) * Math.PI * 2 + rng() * 0.4));
-      this.blob('tree', s, dirs[0], 9, 11, 34, rng);
-      this.blob('tree', s, dirs[1], 10, 12, 22, rng);
+      this.blob('tree', s, dirs[0], 9, 11, 46, rng);
+      this.blob('tree', s, dirs[1], 10, 12, 30, rng);
+      this.fishNear(s, rng);
       this.cluster('stone', s, dirs[2], 7, 9, 5, rng);
       this.cluster('gold', s, dirs[3], 7, 9, 5, rng);
       this.cluster('berry', s, dirs[4], 5, 7, 6, rng);
@@ -111,9 +114,18 @@ const World = {
     for (let k = 0; k < nStone; k++) this.randomCluster('stone', 4 + rng.int(0, 3), rng);
     for (let k = 0; k < nGold; k++) this.randomCluster('gold', 4 + rng.int(0, 3), rng);
     for (let k = 0; k < nBerry; k++) this.randomCluster('berry', 4 + rng.int(0, 2), rng);
+    // fish shoals in shallow water along the coasts
+    const nFish = Math.round(14 * area);
+    for (let k = 0; k < nFish; k++) { const t = this.randomShallow(rng); if (t && this.startDist(t[0], t[1]) > 9) this.shoal(t[0], t[1], 2 + rng.int(0, 2), rng); }
     // Lone trees for texture
-    const lone = Math.round(60 * area * dens);
+    const lone = Math.round(28 * area * dens);
     for (let k = 0; k < lone; k++) { const x = rng.int(1, w - 2), y = rng.int(1, h - 2); if (this.open(x, y) && this.startDist(x, y) > 7) this.addRes('tree', x, y, rng); }
+    // undergrowth: ferns and shrubs on open ground beside the forests
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      if (!this.open(x, y)) continue;
+      let trees = 0; for (const [dx, dy] of U.DIRS) { const r = this.resAt[this.idx(x + dx, y + dy)]; if (r && r.kind === 'tree') trees++; }
+      if (trees >= 2 && rng() < 0.55) { const v = rng(); this.decals.push({ kind: rng() < 0.6 ? 'fern' : 'shrub', x, y, ox: (rng() - 0.5) * 0.7, oy: (rng() - 0.5) * 0.7, v }); }
+    }
     if (opts.reveal) { this.explored.fill(1); this.visible.fill(1); }
   },
   startDist(x, y) { let d = Infinity; for (const s of this.starts) d = Math.min(d, U.dist(x, y, s.x, s.y)); return d; },
@@ -130,9 +142,13 @@ const World = {
     }
   },
   addRes(kind, x, y, rng) {
-    if (!this.open(x, y)) return null;
-    const amounts = { tree: 100, stone: 350, gold: 350, berry: 125 };
-    const r = { id: this.nextResId++, kind, x, y, amount: amounts[kind], max: amounts[kind], v: rng ? rng() : Math.random(), workers: 0 };
+    if (kind === 'fish') { if (!this.inBounds(x, y) || this.tiles[this.idx(x, y)] !== 1 || this.resAt[this.idx(x, y)]) return null; }
+    else if (!this.open(x, y)) return null;
+    const amounts = { tree: 100, stone: 350, gold: 350, berry: 125, fish: 250 };
+    const v = rng ? rng() : Math.random(), v2 = rng ? rng() : Math.random();
+    // resources sit a little off the tile centre so the world does not read as a grid
+    const jit = { tree: 0.42, berry: 0.2, stone: 0.14, gold: 0.14, fish: 0.2 }[kind] || 0;
+    const r = { id: this.nextResId++, kind, x, y, amount: amounts[kind], max: amounts[kind], v, ox: (v2 - 0.5) * 2 * jit, oy: (((v * 7919) % 1) - 0.5) * 2 * jit, workers: 0 };
     this.res.push(r); this.resAt[this.idx(x, y)] = r;
     return r;
   },
@@ -141,8 +157,8 @@ const World = {
     const d = rng.range(dMin, dMax), cx = Math.round(s.x + Math.cos(ang) * d), cy = Math.round(s.y + Math.sin(ang) * d);
     let placed = 0, tries = 0;
     while (placed < count && tries++ < count * 12) {
-      const rr = Math.sqrt(rng()) * 4.2, aa = rng() * Math.PI * 2;
-      const x = Math.round(cx + Math.cos(aa) * rr * 1.3), y = Math.round(cy + Math.sin(aa) * rr);
+      const rr = Math.sqrt(rng()) * 3.6, aa = rng() * Math.PI * 2;
+      const x = Math.round(cx + Math.cos(aa) * rr * 1.25), y = Math.round(cy + Math.sin(aa) * rr);
       if (this.inBounds(x, y) && this.startDist(x, y) >= 6 && this.addRes(kind, x, y, rng)) placed++;
     }
   },
@@ -160,6 +176,23 @@ const World = {
       if (this.addRes(kind, x, y, rng)) { placed++; for (const [dx, dy] of U.DIRS.slice(0, 4)) open.push([x + dx, y + dy]); }
     }
     return placed;
+  },
+  /* A shallow-water tile: water with land beside it. */
+  isShallow(x, y) { if (!this.inBounds(x, y) || this.tiles[this.idx(x, y)] !== 1) return false; for (const [dx, dy] of U.DIRS) if (this.isLand(x + dx, y + dy)) return true; return false; },
+  randomShallow(rng) { for (let t = 0; t < 60; t++) { const x = rng.int(1, this.w - 2), y = rng.int(1, this.h - 2); if (this.isShallow(x, y) && !this.resAt[this.idx(x, y)]) return [x, y]; } return null; },
+  shoal(cx, cy, count, rng) {
+    const open = [[cx, cy]]; let placed = 0, guard = 0;
+    while (open.length && placed < count && guard++ < 60) {
+      const [x, y] = open.splice(rng.int(0, open.length - 1), 1)[0];
+      if (!this.isShallow(x, y)) continue;
+      if (this.addRes('fish', x, y, rng)) { placed++; for (const [dx, dy] of U.DIRS.slice(0, 4)) open.push([x + dx, y + dy]); }
+    }
+    return placed;
+  },
+  fishNear(s, rng) {
+    let best = null, bd = 12 * 12;
+    for (let x = s.x - 12; x <= s.x + 12; x++) for (let y = s.y - 12; y <= s.y + 12; y++) { if (!this.isShallow(x, y) || this.resAt[this.idx(x, y)]) continue; const d = U.dist2(x, y, s.x, s.y); if (d < bd && d > 25) { bd = d; best = [x, y]; } }
+    if (best) this.shoal(best[0], best[1], 3, rng);
   },
   randomCluster(kind, count, rng) {
     for (let t = 0; t < 30; t++) {

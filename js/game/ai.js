@@ -88,11 +88,12 @@ const AI = {
   assign(p, S, u, kind) {
     const home = S.home; if (!home) return false;
     const resKind = { food: 'berry', wood: 'tree', gold: 'gold', stone: 'stone' }[kind];
+    const kinds = kind === 'food' ? ['berry', 'fish'] : [resKind];
     const drops = AI.dropoffs(p, kind);
     const nearDrop = (r) => drops.some((d) => U.dist(d.x, d.y, r.x, r.y) <= 9);
     // something already serviced by a drop-off
     let r = null, bd = Infinity;
-    for (const rr of World.res) { if (rr.kind !== resKind || rr.amount <= 0) continue; if ((rr.workers || 0) >= (resKind === 'tree' ? 2 : 5)) continue; if (!nearDrop(rr)) continue; const d = U.dist2(rr.x, rr.y, u.x, u.y); if (d < bd) { bd = d; r = rr; } }
+    for (const rr of World.res) { if (!kinds.includes(rr.kind) || rr.amount <= 0) continue; if ((rr.workers || 0) >= (rr.kind === 'tree' ? 2 : 5)) continue; if (!nearDrop(rr)) continue; const d = U.dist2(rr.x, rr.y, u.x, u.y); if (d < bd) { bd = d; r = rr; } }
     if (r) { Sim.setOrder(u, { type: 'gather', res: r }); return true; }
     if (kind === 'food') {
       const farm = Sim.freeFarm(u, 40); if (farm) { Sim.setOrder(u, { type: 'gather', res: farm }); return true; }
@@ -139,7 +140,7 @@ const AI = {
     if (p.age >= 2) { if (!has('library')) order.push('library'); if (!has('keep') && D.towers > 0) order.push('keep'); if (p.count('barracks') < 2 && p.res.wood > 400) order.push('barracks'); }
     if (p.age >= 3) { if (!has('workshop')) order.push('workshop'); if (!has('monument') && p.res.stone > 1300 && p.res.gold > 1100 && p.difficulty !== 'easy') order.push('monument'); }
     // Farms as berries run out
-    const berries = World.res.some((r) => r.kind === 'berry' && r.amount > 0 && U.dist(r.x, r.y, home.x, home.y) < 16);
+    const berries = World.res.some((r) => (r.kind === 'berry' || r.kind === 'fish') && r.amount > 0 && U.dist(r.x, r.y, home.x, home.y) < 16);
     const farmTarget = D.farms + (p.age >= 2 ? 3 : 0);
     if (!berries && p.count('farm') < farmTarget && vill.length >= 6) order.unshift('farm');
     for (const t of order) {

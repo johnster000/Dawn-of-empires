@@ -27,6 +27,10 @@ Two different registers, on purpose:
   stone/tile, ashlar/slate). The ground is one grainy texture with soft dirt patches, stretched onto the isometric
   grid with nearest-neighbour sampling; fog of war uses the same hard tile diamonds. Sprites are rasterised at one
   texel per CSS pixel and stamped without smoothing, so zooming in reveals chunky pixels rather than blur.
+- **Off the grid** — the map is a grid for logic, never for the eye. Coastlines and dirt come from smooth fields
+  sampled per texel; every tree, bush and rock sits a random distance off its tile centre; trees are individually
+  sized so a stand of them reads as one canopy with a dark floor beneath; felled trees leave stumps; ferns and
+  shrubs grow along forest edges; fish shoals ring the shallows.
 
 ## Systems as implemented
 
@@ -39,7 +43,8 @@ Two different registers, on purpose:
 
 ### Economy
 - Villagers gather ~0.45–0.55 per second, carry 10 (+5 per cart technology), deposit at the nearest matching drop-off.
-- Trees 100 wood, stone and gold 350, berry bushes 125 food. Farms are infinite, one worker each, 2×2, walkable.
+- Trees 100 wood, stone and gold 350, berry bushes 125 food, shore fish 250 food (gathered from the bank). Farms are
+  infinite, one worker each, 2×2, walkable.
 - Builders stack with diminishing returns: rate = (1 + 0.6·(n−1)) / n per builder.
 - Houses +5 population, Town Hall +5, cap configurable 50–200.
 

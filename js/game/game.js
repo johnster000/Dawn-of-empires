@@ -245,7 +245,7 @@ const Game = {
     else if ((u && u.owner !== this.human) || (b && b.owner !== this.human)) cur = haveUnits ? 'crosshair' : 'pointer';
     else if (u || b) cur = 'pointer'; else if (r && haveUnits) cur = 'cell';
     if (cv.style.cursor !== cur) cv.style.cursor = cur;
-    const name = u ? `${u.def.name} · ${this.players[u.owner].name}` : b ? `${b.def.name} · ${this.players[b.owner].name}` : r ? `${{ tree: 'Trees', berry: 'Berry bush', stone: 'Stone', gold: 'Gold' }[r.kind]} · ${Math.ceil(r.amount)}` : '';
+    const name = u ? `${u.def.name} · ${this.players[u.owner].name}` : b ? `${b.def.name} · ${this.players[b.owner].name}` : r ? `${{ tree: 'Trees', berry: 'Berry bush', stone: 'Stone', gold: 'Gold', fish: 'Fish' }[r.kind]} · ${Math.ceil(r.amount)}` : '';
     const el = document.getElementById('hover'); if (el.textContent !== name) el.textContent = name; el.hidden = !name;
   },
 

@@ -21,9 +21,10 @@ const Renderer = {
   /* Precompute per-tile colours and paint the whole ground into one texture (TP px per tile).
      Drawing it with the isometric affine transform maps each square tile onto its diamond exactly,
      so the entire terrain costs a single drawImage per frame. */
-  TP: 20,
+  TP: 16,
   prepareMap() {
-    const w = World.w, h = World.h, T = World.T, n = w * h, TP = this.TP;
+    const w = World.w, h = World.h, T = World.T, n = w * h;
+    const TP = this.TP = w >= 112 ? 12 : w >= 88 ? 16 : 20;
     this.tileColor = new Array(n); this.tileDeco = new Uint8Array(n);
     const rng = RNG.make(Game.seed ^ 0x51ed);
     for (let i = 0; i < n; i++) {
@@ -41,40 +42,61 @@ const Renderer = {
       const hsh = ((x * 73856093) ^ (y * 19349663)) >>> 0;
       this.tileDeco[i] = t === 0 ? (hsh % 14 === 0 ? 1 : hsh % 29 === 0 ? 2 : 0) : 0;
     }
-    // ground texture: per-texel grain, dirt patches and a limited palette, like a scanned 256-colour tileset
+    // ground texture. Colours are computed per texel from smooth fields (shade, dirt, a bilinear land/water
+    // mask with noisy edges) so coastlines and dirt fade instead of following tile diamonds.
     const tex = this.terrainTex = document.createElement('canvas'); tex.width = w * TP; tex.height = h * TP;
     const tg = tex.getContext('2d');
     const img = tg.createImageData(w * TP, h * TP), d = img.data;
     const nDirt = RNG.noise(Game.seed + 77, 5), nFine = RNG.noise(Game.seed + 91, 1.7), nShade = RNG.noise(Game.seed + 23, 6);
-    const dirt = T.dirt ? U.hex(T.dirt) : null, W = w * TP, ground = T.ground.map(U.hex), shoreRGB = U.hex(T.shore), waterA = U.hex(T.waterDeep), waterB = U.hex(T.water);
+    const dirt = T.dirt ? U.hex(T.dirt) : null, W = w * TP, ground = T.ground.map(U.hex), sand = U.hex(T.shore), sandDark = U.hex(T.shoreDark);
+    const waterDeep = U.hex(T.waterDeep), waterMid = U.hex(T.water), waterShallow = U.mix(T.water, T.waterLight, 0.55), waterSh = U.hex(waterShallow);
+    const mask = new Float32Array(n); for (let i = 0; i < n; i++) mask[i] = World.tiles[i] === 1 ? 1 : 0;
+    const wet = (fx, fy) => { // bilinear sample of the water mask at tile centres
+      const gx = U.clamp(fx - 0.5, 0, w - 1.001), gy = U.clamp(fy - 0.5, 0, h - 1.001), x0 = Math.floor(gx), y0 = Math.floor(gy), tx = gx - x0, ty = gy - y0;
+      const x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1);
+      return (mask[y0 * w + x0] * (1 - tx) + mask[y0 * w + x1] * tx) * (1 - ty) + (mask[y1 * w + x0] * (1 - tx) + mask[y1 * w + x1] * tx) * ty;
+    };
+    this.wetAt = wet;
     let seed = (Game.seed ^ 0xabcdef) >>> 0;
-    for (let i = 0; i < n; i++) {
-      const x = i % w, y = Math.floor(i / w), t = World.tiles[i];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       for (let py = 0; py < TP; py++) for (let px = 0; px < TP; px++) {
-        const fx = x + px / TP, fy = y + py / TP;
+        const fx = x + (px + 0.5) / TP, fy = y + (py + 0.5) / TP;
         seed = (seed * 1664525 + 1013904223) >>> 0;
-        const grain = ((seed >>> 16) % 19) - 9;                       // ±9 per texel
-        const sh = nShade(fx, fy, 3), fine = (nFine(fx, fy, 2) - 0.5) * (t === 1 ? 20 : 30);
+        const grain = ((seed >>> 16) % 13) - 6;
+        const fine = nFine(fx, fy, 2) - 0.5;
+        const wv = wet(fx, fy) + fine * 0.22;
         let r, g, b;
-        if (t === 1) { const k = U.clamp(sh, 0, 1); r = waterA[0] + (waterB[0] - waterA[0]) * k; g = waterA[1] + (waterB[1] - waterA[1]) * k; b = waterA[2] + (waterB[2] - waterA[2]) * k; }
-        else {
+        if (wv > 0.5) {
+          const depth = U.clamp((wv - 0.5) / 0.35, 0, 1);
+          const c0 = depth < 0.5 ? waterSh : waterMid, c1 = depth < 0.5 ? waterMid : waterDeep, f = depth < 0.5 ? depth * 2 : (depth - 0.5) * 2;
+          r = c0[0] + (c1[0] - c0[0]) * f; g = c0[1] + (c1[1] - c0[1]) * f; b = c0[2] + (c1[2] - c0[2]) * f;
+          r += fine * 14; g += fine * 14; b += fine * 10;
+        } else {
+          const sh = nShade(fx, fy, 3);
           const kk = U.clamp(sh, 0, 0.999) * (ground.length - 1), i0 = Math.floor(kk), f = kk - i0, c0 = ground[i0], c1 = ground[Math.min(ground.length - 1, i0 + 1)];
           r = c0[0] + (c1[0] - c0[0]) * f; g = c0[1] + (c1[1] - c0[1]) * f; b = c0[2] + (c1[2] - c0[2]) * f;
-          if (dirt) { const dv = U.clamp((nDirt(fx, fy, 3) - 0.56) * 5, 0, 0.85); if (dv > 0) { r += (dirt[0] - r) * dv; g += (dirt[1] - g) * dv; b += (dirt[2] - b) * dv; } }
-          if (t === 2) { r += (shoreRGB[0] - r) * 0.55; g += (shoreRGB[1] - g) * 0.55; b += (shoreRGB[2] - b) * 0.55; }
+          if (dirt) { const dv = U.clamp((nDirt(fx, fy, 3) - 0.56) * 5, 0, 0.8); if (dv > 0) { r += (dirt[0] - r) * dv; g += (dirt[1] - g) * dv; b += (dirt[2] - b) * dv; } }
+          const sf = U.clamp((wv - 0.16) / 0.3, 0, 1); // beach fades in towards the water
+          if (sf > 0) { const sc = fine > 0.1 ? sandDark : sand; r += (sc[0] - r) * sf; g += (sc[1] - g) * sf; b += (sc[2] - b) * sf; }
+          r += fine * 22; g += fine * 22; b += fine * 16;
         }
         const o = ((y * TP + py) * W + (x * TP + px)) * 4;
-        d[o] = U.clamp(Math.round((r + grain + fine) / 6) * 6, 0, 255); d[o + 1] = U.clamp(Math.round((g + grain + fine) / 6) * 6, 0, 255); d[o + 2] = U.clamp(Math.round((b + grain + fine) / 6) * 6, 0, 255); d[o + 3] = 255;
+        d[o] = U.clamp(Math.round((r + grain) / 4) * 4, 0, 255); d[o + 1] = U.clamp(Math.round((g + grain) / 4) * 4, 0, 255); d[o + 2] = U.clamp(Math.round((b + grain) / 4) * 4, 0, 255); d[o + 3] = 255;
       }
     }
     tg.putImageData(img, 0, 0);
+    // sparse ground detail: tufts and pebbles, painted after the fact
     for (let i = 0; i < n; i++) {
       const x = i % w, y = Math.floor(i / w), t = World.tiles[i], c = this.tileColor[i];
-      if (t === 2 && false) { tg.fillStyle = U.alpha(T.shoreDark, 0.4); for (let k = 0; k < 3; k++) { tg.fillRect(x * TP + Math.floor(rng() * TP), y * TP + Math.floor(rng() * TP), 2, 1); } }
+      if (t !== 0) continue;
       const dd = this.tileDeco[i];
-      if (dd === 1) { tg.fillStyle = U.alpha(U.shade(c, -0.22), 0.7); for (let k = -1; k <= 1; k++) { tg.fillRect(x * TP + TP / 2 + k * 3, y * TP + TP / 2 - 2, 1, 4); } }
+      if (dd === 1) { tg.fillStyle = U.alpha(U.shade(c, -0.22), 0.7); for (let k = -1; k <= 1; k++) tg.fillRect(x * TP + TP / 2 + k * 3 + Math.floor(rng() * 3), y * TP + TP / 2 - 2 + Math.floor(rng() * 4), 1, 4); }
       else if (dd === 2) { tg.fillStyle = T.id === 'tundra' ? '#b8c4cb' : ['#d6be6a', '#cfd2d5', '#b87a92'][(x + y) % 3]; tg.fillRect(x * TP + 5, y * TP + 6, 2, 2); tg.fillRect(x * TP + 11, y * TP + 11, 2, 2); }
     }
+    // screen-space film grain, tiled over the ground each frame
+    const gp = document.createElement('canvas'); gp.width = gp.height = 128; const gg = gp.getContext('2d'); const gi = gg.createImageData(128, 128);
+    for (let i = 0; i < 128 * 128; i++) { const o = i * 4; const v = Math.random(); gi.data[o] = gi.data[o + 1] = gi.data[o + 2] = v > 0.5 ? 255 : 0; gi.data[o + 3] = Math.floor(Math.abs(v - 0.5) * 2 * 26); }
+    gg.putImageData(gi, 0, 0); this.grainPat = this.g.createPattern(gp, 'repeat');
     // minimap terrain
     this.miniTerrain = document.createElement('canvas'); this.miniTerrain.width = w; this.miniTerrain.height = h;
     const mg = this.miniTerrain.getContext('2d');
@@ -133,7 +155,8 @@ const Renderer = {
     const list = [];
     const inView = (x, y) => x >= x0 - 2 && x <= x1 + 2 && y >= y0 - 2 && y <= y1 + 2;
     const reveal = Game.settings.reveal, exp = World.explored, vis = World.visible;
-    for (const r of World.res) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 1, k: 'res', o: r });
+    for (const r of World.res) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 1 + r.ox + r.oy, k: 'res', o: r });
+    for (const r of World.decals) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 0.3, k: 'res', o: r });
     for (const b of Game.buildings) { if (b.dead || !inView(b.x, b.y)) continue; if (!reveal && !exp[World.idx(b.tx, b.ty)] && !exp[World.idx(b.tx + b.size - 1, b.ty + b.size - 1)]) continue; list.push({ d: b.tx + b.ty + b.size, k: 'bld', o: b }); }
     for (const u of Game.units) { if (u.dead || !inView(u.x, u.y)) continue; if (u.owner !== Game.human && !reveal && !vis[World.idx(Math.floor(u.x), Math.floor(u.y))]) { u.sx = null; continue; } list.push({ d: u.x + u.y, k: 'unit', o: u }); }
     for (const e of Game.effects) { const ex = e.x != null ? e.x : U.lerp(e.x0, e.x1, e.t / e.dur), ey = e.y != null ? e.y : U.lerp(e.y0, e.y1, e.t / e.dur); if (inView(ex, ey)) list.push({ d: ex + ey + (e.kind === 'corpse' || e.kind === 'rubble' ? -0.4 : 0.6), k: 'fx', o: e }); }
@@ -158,29 +181,38 @@ const Renderer = {
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = 0.4; this.drawMinimap(); }
   },
   /* Draw a per-tile image (`ppt` pixels per tile) so that tile (x, y) lands on its diamond. */
-  drawMapImage(img, ppt, x0, y0, x1, y1) {
+  drawMapImage(img, ppt, x0, y0, x1, y1, smooth) {
     const g = this.g, z = this.cam.zoom, dpr = this.dpr, [ox, oy] = this.toScreen(0, 0, 0);
     g.setTransform(32 * z * dpr, 16 * z * dpr, -32 * z * dpr, 16 * z * dpr, ox * dpr, oy * dpr);
-    g.imageSmoothingEnabled = false;
+    g.imageSmoothingEnabled = !!smooth;
     const sx = Math.max(0, x0 - 1), sy = Math.max(0, y0 - 1), ex = Math.min(World.w, x1 + 2), ey = Math.min(World.h, y1 + 2);
     g.drawImage(img, sx * ppt, sy * ppt, (ex - sx) * ppt, (ey - sy) * ppt, sx, sy, ex - sx, ey - sy);
   },
   drawGround(x0, y0, x1, y1) {
     const g = this.g, s = this.cam.zoom, T = World.T, w = World.w, dpr = this.dpr;
-    this.drawMapImage(this.terrainTex, this.TP, x0, y0, x1, y1);
+    this.drawMapImage(this.terrainTex, this.TP, x0, y0, x1, y1, true);
+    // film grain over the whole map area, scrolling with the world
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (s < 0.85) return;
-    // animated ripples on visible water, nothing else: everything static is baked into the texture
+    const c = [this.toScreen(0, 0, 0), this.toScreen(w, 0, 0), this.toScreen(w, World.h, 0), this.toScreen(0, World.h, 0)];
+    g.save(); g.beginPath(); g.moveTo(c[0][0], c[0][1]); for (const q of c.slice(1)) g.lineTo(q[0], q[1]); g.closePath(); g.clip();
+    const ox = ((c[0][0] % 128) + 128) % 128, oy = ((c[0][1] % 128) + 128) % 128;
+    g.translate(ox, oy); g.fillStyle = this.grainPat; g.fillRect(-ox - 128, -oy - 128, this.W + 256, this.H + 256);
+    g.restore();
+    if (s < 0.7) return;
+    // moving water: light dashes that drift, brighter and denser in the shallows, foam at the shoreline
     const hw = 32 * s, hh = 16 * s, reveal = Game.settings.reveal, vis = World.visible, tiles = World.tiles;
-    const cols = this.rippleCols || (this.rippleCols = [0.25, 0.35, 0.45, 0.55].map((a) => U.alpha(T.waterLight, a)));
-    g.lineWidth = Math.max(0.8, s); g.lineCap = 'round';
+    const cols = this.rippleCols || (this.rippleCols = [U.alpha(T.waterLight, 0.35), U.alpha(T.waterLight, 0.55), U.alpha('#ffffff', 0.35)]);
+    g.lineCap = 'butt'; g.lineWidth = Math.max(1, Math.round(s));
     let n = 0;
-    for (let y = y0; y <= y1 && n < 400; y++) for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1 && n < 700; y++) for (let x = x0; x <= x1; x++) {
       const i = y * w + x;
-      if (tiles[i] !== 1 || ((x + y) & 1) || !(reveal || vis[i])) continue;
-      const [sx, sy] = this.toScreen(x, y, 0), ph = this.time * 1.2 + x * 0.7 + y * 1.3, k = Math.sin(ph);
-      g.strokeStyle = cols[(Math.floor((k + 1) * 2)) & 3];
-      g.beginPath(); g.moveTo(sx - hw * 0.4, sy + hh + k * 2 * s); g.lineTo(sx + hw * 0.4, sy + hh - k * 2 * s); g.stroke(); n++;
+      if (tiles[i] !== 1 || !(reveal || vis[i])) continue;
+      const [sx, sy] = this.toScreen(x + 0.5, y + 0.5, 0);
+      const hsh = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+      const drift = ((this.time * 6 + (hsh % 64)) % 64) - 32;
+      const k = ((hsh >>> 8) % 3);
+      g.strokeStyle = cols[k]; g.beginPath(); g.moveTo(sx + (drift - 14) * s * 0.7, sy + ((hsh >>> 4) % 9 - 4) * s); g.lineTo(sx + (drift - 14 + 6 + k * 3) * s * 0.7, sy + ((hsh >>> 4) % 9 - 4) * s); g.stroke(); n++;
+      if (World.isShallow(x, y) && Math.sin(this.time * 1.5 + hsh % 7) > 0.2) { g.strokeStyle = cols[2]; g.beginPath(); g.moveTo(sx - 10 * s, sy + 6 * s); g.lineTo(sx + 4 * s, sy + 6 * s); g.stroke(); }
     }
   },
 
@@ -199,62 +231,120 @@ const Renderer = {
   /* ---- natural resources: vector art rendered once per look and zoom step, then stamped ---- */
   drawResource(r) {
     const z = this.cam.zoom, zq = this.zq(z);
-    const vq = Math.floor(r.v * 6), lvl = r.kind === 'tree' ? 0 : Math.min(2, Math.floor((r.amount / r.max) * 3));
+    const vq = Math.floor(r.v * 8), lvl = r.max ? Math.min(2, Math.floor((r.amount / r.max) * 3)) : 0;
     const key = r.kind + '|' + vq + '|' + lvl + '|' + zq.toFixed(3);
     let sp = this.sprites.get(key);
     if (!sp) {
-      const k = this.spriteK(zq), W = Math.ceil(64 * k), H = Math.ceil(84 * k), ax = W / 2, ay = H - 14 * k;
+      const k = this.spriteK(zq), W = Math.ceil(128 * k), H = Math.ceil(150 * k), ax = W / 2, ay = H - 20 * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
-      const fake = { kind: r.kind, x: -0.5, y: -0.5, v: (vq + 0.5) / 6, amount: (lvl + 0.5) / 3, max: 1 };
+      const fake = { kind: r.kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: (vq + 0.5) / 8, amount: (lvl + 0.5) / 3, max: 1 };
       this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
       sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
       if (this.sprites.size > 500) this.sprites.clear();
     }
-    const [sx, sy] = this.toScreen(r.x + 0.5, r.y + 0.5, 0);
+    const [sx, sy] = this.toScreen(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
     this.stamp(sp, sx, sy);
   },
   drawResourceVector(r) {
     const g = this.g, T = World.T;
     this.at(r.x + 0.5, r.y + 0.5, 0);
-    this.dimIf(r.x, r.y);
-    const v = r.v, scale = r.kind === 'tree' ? 0.85 + v * 0.35 : 1;
+    const v = r.v; let seed = Math.floor(v * 1e6) >>> 0; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed >>> 8) / 16777216; };
+    const dots = (cx, cy, rx, ry, count, cols) => { for (let i = 0; i < count; i++) { const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()); g.fillStyle = cols[Math.floor(rnd() * cols.length)]; g.fillRect(Math.round(cx + Math.cos(a) * rx * d), Math.round(cy + Math.sin(a) * ry * d), 1.5, 1.5); } };
     if (r.kind === 'tree') {
       const shape = T.treeShape;
-      const canopy = T.canopy[Math.floor(v * T.canopy.length) % T.canopy.length];
-      this.castShadow(0, 0, 26 * scale, 8 * scale);
+      // every tree is its own height and width so a stand of them reads as a canopy, not a row
+      const scale = 0.85 + v * 0.45, tall = ((v * 13) % 1) < 0.3, hgt = (tall ? 78 : 58) * scale;
+      const canopy = T.canopy[Math.floor(v * T.canopy.length) % T.canopy.length], light = U.shade(canopy, 0.16), lighter = U.shade(canopy, 0.3), dark = U.shade(canopy, -0.28), darker = U.shade(canopy, -0.5);
+      // a broad ground shadow: many of these overlapping is what makes a forest floor dark
+      this.castShadow(6, 2, 40 * scale, 11 * scale);
+      const leaves = (cx, cy, rx, ry, count, size) => {
+        for (let i = 0; i < count; i++) {
+          const a = rnd() * Math.PI * 2, dd = Math.pow(rnd(), 0.6), bx = cx + Math.cos(a) * rx * dd, by = cy + Math.sin(a) * ry * dd;
+          const lit = -(by - cy) / ry * 0.6 - (bx - cx) / rx * 0.3 + (rnd() - 0.5) * 0.5;
+          const col = lit > 0.5 ? lighter : lit > 0.15 ? light : lit > -0.25 ? canopy : lit > -0.55 ? dark : darker;
+          const rr = size * (0.6 + rnd() * 0.8);
+          this.ell(bx, by, rr, rr * 0.8, col);
+        }
+      };
       if (shape === 'pine') {
-        g.fillStyle = T.trunk; g.fillRect(-2, -6 * scale, 4, 8 * scale);
-        for (let k = 0; k < 3; k++) { const y = -4 - k * 12 * scale, w = (18 - k * 4) * scale, h = 16 * scale; this.poly([[0, y - h], [w, y], [-w, y]], k % 2 ? canopy : U.shade(canopy, -0.12)); this.poly([[0, y - h], [w * 0.35, y - h * 0.4], [0, y - h * 0.2]], U.shade(canopy, 0.18)); }
+        this.poly([[-2.5, 2], [2.5, 2], [1.5, -hgt - 20], [-1.5, -hgt - 20]], T.trunk);
+        const layers = tall ? 7 : 6;
+        for (let L = 0; L < layers; L++) {
+          const y = -8 - L * (hgt / layers) * 1.05, hw = (26 - L * (22 / layers)) * scale, h = 18 * scale, col = L % 2 ? canopy : dark;
+          const pts = [[0, y - h]]; const teeth = 9; for (let t = 0; t <= teeth; t++) { const f = t / teeth; pts.push([U.lerp(hw, -hw, f), y + (t % 2 ? -4 * scale : 0) + (rnd() - 0.5) * 3]); }
+          this.poly(pts, col);
+          this.poly([[0, y - h], [-hw * 0.55, y - h * 0.3], [-hw * 0.15, y - h * 0.15]], light);
+          this.poly([[0, y - h], [hw * 0.6, y - h * 0.25], [hw * 0.2, y - h * 0.05]], darker);
+          for (let i = 0; i < 10; i++) { const f = rnd(); g.fillStyle = rnd() < 0.5 ? light : darker; g.fillRect(U.lerp(-hw * 0.9, hw * 0.9, f), y - h * 0.5 * rnd(), 1.5, 2.5); }
+        }
       } else if (shape === 'palm') {
-        g.strokeStyle = T.trunk; g.lineWidth = 3.5; g.beginPath(); g.moveTo(0, 2); g.quadraticCurveTo(6 * scale, -14 * scale, 3 * scale, -30 * scale); g.stroke();
-        for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + v * 3; g.save(); g.translate(3 * scale, -30 * scale); g.rotate(a); this.ell(11 * scale, 0, 12 * scale, 3.5 * scale, k % 2 ? canopy : U.shade(canopy, -0.15)); g.restore(); }
-        g.fillStyle = '#7a5a2a'; g.beginPath(); g.arc(3 * scale, -29 * scale, 3, 0, 7); g.fill();
+        const th = hgt + 10;
+        g.strokeStyle = T.trunk; g.lineWidth = 4.5; g.beginPath(); g.moveTo(0, 2); g.quadraticCurveTo(9 * scale, -th * 0.45, 5 * scale, -th); g.stroke();
+        g.strokeStyle = U.shade(T.trunk, -0.3); g.lineWidth = 1; for (let k = 0; k < 12; k++) { const t = k / 12; const px = t * 6 * scale, py = -t * th; g.beginPath(); g.moveTo(-2.5 + px, py); g.lineTo(2.5 + px, py - 1); g.stroke(); }
+        for (let k = 0; k < 11; k++) { const a = (k / 11) * Math.PI * 2 + v * 3, len = (22 + rnd() * 10) * scale, col = k % 3 === 0 ? light : k % 3 === 1 ? canopy : dark;
+          g.save(); g.translate(5 * scale, -th); g.rotate(a); g.fillStyle = col; g.beginPath(); g.moveTo(0, 0); for (let t = 0; t <= 8; t++) { const f = t / 8; g.lineTo(f * len, -(4 * scale) * Math.sin(f * Math.PI) - (t % 2) * 2.5 + f * f * 6); } for (let t = 8; t >= 0; t--) { const f = t / 8; g.lineTo(f * len, (4 * scale) * Math.sin(f * Math.PI) + (t % 2) * 2.5 + f * f * 6); } g.closePath(); g.fill(); g.restore(); }
+        g.fillStyle = '#7a5a2a'; for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(5 * scale + k * 3 - 4, -th + 3, 2.4, 0, 7); g.fill(); }
       } else {
-        g.fillStyle = T.trunk; g.fillRect(-2.5, -8 * scale, 5, 10 * scale);
-        this.ell(0, -18 * scale, 13 * scale, 12 * scale, U.shade(canopy, -0.18));
-        this.ell(-4 * scale, -20 * scale, 11 * scale, 10 * scale, canopy);
-        this.ell(4 * scale, -23 * scale, 9 * scale, 8.5 * scale, U.shade(canopy, 0.12));
-        this.ell(-3 * scale, -27 * scale, 6 * scale, 5 * scale, U.shade(canopy, 0.28));
+        // broadleaf: trunk, a few limbs, then a crown built entirely from leaf clusters
+        const cw = (tall ? 24 : 32) * scale, ch = (tall ? 30 : 26) * scale, cy = -hgt;
+        this.poly([[-4.5, 2], [4.5, 2], [3, cy + ch * 0.4], [-3, cy + ch * 0.4]], T.trunk);
+        this.poly([[-7, 2], [-3.5, 2], [-2.5, -4]], T.trunk); this.poly([[7, 2], [3.5, 2], [2.5, -4]], T.trunk);
+        g.strokeStyle = U.shade(T.trunk, -0.35); g.lineWidth = 1; g.beginPath(); g.moveTo(-1.5, 0); g.lineTo(-1, cy + ch * 0.5); g.moveTo(2, -2); g.lineTo(1.5, cy + ch * 0.55); g.stroke();
+        g.strokeStyle = T.trunk; g.lineWidth = 2.5; g.beginPath(); g.moveTo(0, cy + ch * 0.4); g.lineTo(-cw * 0.45, cy - ch * 0.1); g.moveTo(0, cy + ch * 0.4); g.lineTo(cw * 0.4, cy - ch * 0.2); g.moveTo(0, cy + ch * 0.3); g.lineTo(cw * 0.1, cy - ch * 0.5); g.stroke();
+        this.ell(0, cy + 3, cw * 0.9, ch * 0.9, darker);
+        leaves(0, cy, cw, ch, 150, 4.2 * scale);
+        // secondary crowns break the outline
+        leaves(-cw * 0.55, cy + ch * 0.25, cw * 0.5, ch * 0.45, 40, 3.6 * scale);
+        leaves(cw * 0.5, cy + ch * 0.1, cw * 0.5, ch * 0.5, 40, 3.6 * scale);
+        leaves(cw * 0.1, cy - ch * 0.55, cw * 0.55, ch * 0.4, 35, 3.4 * scale);
+        // fine leaf speckle
+        for (let i = 0; i < 90; i++) { const a = rnd() * Math.PI * 2, dd = Math.sqrt(rnd()); g.fillStyle = rnd() < 0.5 ? lighter : darker; g.fillRect(Math.round(Math.cos(a) * cw * dd), Math.round(cy + Math.sin(a) * ch * dd), 1.5, 1.5); }
       }
+    } else if (r.kind === 'fern') {
+      const col = World.T.bush, light = U.shade(col, 0.3), dark = U.shade(col, -0.3), scale = 0.8 + v * 0.5;
+      g.lineWidth = 1.6; g.lineCap = 'round';
+      for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * 0.38 + (rnd() - 0.5) * 0.2, len = (12 + rnd() * 6) * scale; const ex = Math.cos(a) * len, ey = Math.sin(a) * len * 0.8; g.strokeStyle = i % 2 ? light : dark; g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(ex * 0.5, ey - 4, ex, ey + 3); g.stroke(); for (let k = 1; k < 5; k++) { const f = k / 5; g.fillStyle = i % 2 ? light : col; g.fillRect(ex * f * 0.9 - 1.5, ey * f - 3 + 1, 3, 1.5); } }
+    } else if (r.kind === 'shrub') {
+      const col = World.T.bush, light = U.shade(col, 0.25), dark = U.shade(col, -0.35), scale = 0.7 + v * 0.6;
+      this.castShadow(1, 2, 12 * scale, 3);
+      for (let i = 0; i < 12; i++) { const a = rnd() * Math.PI * 2, dd = Math.sqrt(rnd()), bx = Math.cos(a) * 11 * scale * dd, by = -7 * scale + Math.sin(a) * 6 * scale * dd; this.ell(bx, by, 3.5 * scale, 3 * scale, by < -7 * scale ? light : dd > 0.7 ? dark : col); }
+      dots(0, -7 * scale, 10 * scale, 5 * scale, 14, [light, dark]);
+    } else if (r.kind === 'stump') {
+      this.castShadow(1, 1, 8, 3);
+      this.poly([[-4, 2], [4, 2], [3.5, -5], [-3.5, -5]], U.shade(T.trunk, -0.15));
+      this.ell(0, -5, 3.5, 1.8, U.shade(T.trunk, 0.45)); g.strokeStyle = U.shade(T.trunk, 0.1); g.lineWidth = 0.8; g.beginPath(); g.ellipse(0, -5, 2, 1, 0, 0, 7); g.stroke();
+      g.fillStyle = U.shade(T.trunk, 0.2); g.fillRect(6, 0, 5, 1.5); g.fillRect(-9, 1, 4, 1.5);
     } else if (r.kind === 'stone' || r.kind === 'gold') {
-      const base = r.kind === 'gold' ? U.mix(T.rock, '#8a7a4a', 0.35) : T.rock, dark = r.kind === 'gold' ? U.mix(T.rockDark, '#6a5a30', 0.35) : T.rockDark;
-      const k = 0.6 + 0.4 * (r.amount / r.max);
-      this.castShadow(0, 4, 14, 5);
-      this.poly([[-16 * k, 4], [-10 * k, -10 * k], [2, -14 * k], [12 * k, -6 * k], [16 * k, 5], [0, 10]], base);
-      this.poly([[-16 * k, 4], [-10 * k, -10 * k], [2, -14 * k], [-2, 2]], U.shade(base, 0.2));
-      this.poly([[2, -14 * k], [12 * k, -6 * k], [16 * k, 5], [0, 10], [-2, 2]], dark);
-      this.poly([[-22, 8], [-18, 0], [-10, 2], [-9, 9]], U.shade(base, 0.05));
-      if (r.kind === 'gold') { g.fillStyle = T.gold; for (let i = 0; i < 6; i++) { const a = v * 17 + i * 1.7; g.beginPath(); g.arc(Math.cos(a) * 9, -4 + Math.sin(a) * 5, 2.2, 0, 7); g.fill(); } g.fillStyle = '#fff3b0'; g.fillRect(3, -6, 1.5, 1.5); }
-    } else if (r.kind === 'berry') {
+      const gold = r.kind === 'gold';
+      const base = gold ? U.mix(T.rock, '#7a6a48', 0.3) : T.rock, dark = gold ? U.mix(T.rockDark, '#5a4a30', 0.3) : T.rockDark, light = U.shade(base, 0.3);
       const k = 0.7 + 0.3 * (r.amount / r.max);
-      this.castShadow(0, 2, 12, 4);
-      this.ell(0, -6, 13 * k, 9 * k, T.bush); this.ell(-4, -9, 8 * k, 6 * k, U.shade(T.bush, 0.15)); this.ell(5, -8, 7 * k, 5 * k, U.shade(T.bush, 0.05));
-      g.fillStyle = T.berry; for (let i = 0; i < 7; i++) { const a = v * 11 + i * 0.9; g.beginPath(); g.arc(Math.cos(a) * 9 * k, -7 + Math.sin(a) * 5 * k, 1.8, 0, 7); g.fill(); }
+      this.castShadow(4, 5, 24, 7);
+      const boulder = (bx, by, w, h) => {
+        const pts = []; const nn = 7; for (let i = 0; i < nn; i++) { const a = (i / nn) * Math.PI * 2 + rnd() * 0.4; pts.push([bx + Math.cos(a) * w * (0.8 + rnd() * 0.3), by + Math.sin(a) * h * (0.8 + rnd() * 0.3)]); }
+        this.poly(pts, base);
+        // lit top-left facet and a dark lower-right facet
+        this.poly([pts[3], pts[4], pts[5], [bx, by]], light); this.poly([pts[0], pts[1], pts[2], [bx + w * 0.1, by + h * 0.1]], dark);
+        g.strokeStyle = U.alpha('#000', 0.35); g.lineWidth = 1; g.beginPath(); g.moveTo(pts[5][0], pts[5][1]); g.lineTo(bx, by); g.lineTo(pts[2][0], pts[2][1]); g.stroke();
+        dots(bx, by, w * 0.8, h * 0.8, 14, [light, dark]);
+      };
+      boulder(-9 * k, 0, 10 * k, 7 * k); boulder(7 * k, -3, 13 * k, 9 * k); boulder(-1, 5, 7 * k, 4.5 * k);
+      if (gold) { g.strokeStyle = '#d6ad33'; g.lineWidth = 2; for (let i = 0; i < 4; i++) { const x = -12 + rnd() * 24, y = -8 + rnd() * 12; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 3 + rnd() * 4, y + 1 - rnd() * 3); g.stroke(); } dots(0, -2, 14, 8, 16, ['#f0d060', '#d6ad33', '#fff2b0']); }
+    } else if (r.kind === 'berry') {
+      const k = 0.75 + 0.25 * (r.amount / r.max);
+      this.castShadow(1, 3, 16, 4);
+      this.ell(0, -7, 16 * k, 10 * k, U.shade(T.bush, -0.35));
+      for (let i = 0; i < 9; i++) { const a = rnd() * Math.PI * 2, dd = Math.sqrt(rnd()) * 0.8, bx = Math.cos(a) * 13 * k * dd, by = -8 + Math.sin(a) * 7 * k * dd; this.ell(bx, by, (5 + rnd() * 3) * k, (4 + rnd() * 2) * k, by < -9 ? U.shade(T.bush, 0.2) : T.bush); }
+      dots(0, -8, 13 * k, 7 * k, 30, [U.shade(T.bush, 0.35), U.shade(T.bush, -0.4)]);
+      for (let i = 0; i < 12; i++) { const a = rnd() * Math.PI * 2, dd = Math.sqrt(rnd()) * 0.85; const bx = Math.cos(a) * 13 * k * dd, by = -8 + Math.sin(a) * 7 * k * dd; this.ell(bx, by, 1.9, 1.9, T.berry); g.fillStyle = '#ffd0d0'; g.fillRect(bx - 1, by - 1, 1, 1); }
+    } else if (r.kind === 'fish') {
+      // a shoal in the shallows: rings on the water and a few dark backs breaking the surface
+      g.strokeStyle = U.alpha('#ffffff', 0.5); g.lineWidth = 1;
+      for (let i = 0; i < 3; i++) { const bx = -10 + rnd() * 20, by = -4 + rnd() * 8; g.beginPath(); g.ellipse(bx, by, 6 + rnd() * 4, 2.5 + rnd() * 1.5, 0, 0, 7); g.stroke(); }
+      for (let i = 0; i < 4; i++) { const bx = -12 + rnd() * 24, by = -5 + rnd() * 10, dir = rnd() < 0.5 ? -1 : 1; g.fillStyle = i % 2 ? '#3a4a5a' : '#4a5f72'; g.beginPath(); g.ellipse(bx, by, 5, 1.6, 0.1 * dir, 0, 7); g.fill(); this.poly([[bx + 5 * dir, by], [bx + 8 * dir, by - 2], [bx + 8 * dir, by + 2]], i % 2 ? '#3a4a5a' : '#4a5f72'); g.fillStyle = '#c8d8e8'; g.fillRect(bx - 1, by - 1, 1.5, 1); }
     }
-    g.globalAlpha = 1;
   },
 
   /* ---- buildings: static art cached per look and zoom step; flags and smoke drawn live ---- */
@@ -283,7 +373,8 @@ const Renderer = {
     // live parts
     this.at(b.tx, b.ty, 0);
     const col = p.color.main, sh = b.def.shape;
-    if (sh === 'hall') { const t = this.P(s - 0.4, s - 0.4, 40); this.flag([t[0], t[1] - 12], col); this.flag(this.P(s, 0, this.height(b) + 4), col); }
+    if (sh === 'hall' && b.ageVisual === 0) { const t = this.P(1.5, 1.5, 56); this.flag([t[0], t[1]], col); }
+    else if (sh === 'hall') { const t = this.P(s - 0.4, s - 0.4, 40); this.flag([t[0], t[1] - 12], col); this.flag(this.P(s, 0, this.height(b) + 4), col); }
     else if (sh === 'tower') this.flag(this.P(0.5, 0.5, 62), col);
     else if (sh === 'keep') this.flag(this.P(s * 0.5, s * 0.5, 50), col);
     else if (sh === 'monument') { const t = this.P(s / 2, s / 2, 48); this.flag([t[0], t[1] - 44], col); }
@@ -399,6 +490,7 @@ const Renderer = {
   },
   shape_hall(b, age, p) {
     const s = b.size, g = this.g;
+    if (b.ageVisual === 0) { this.pavilion(b, age, p); return; }
     this.box(0, 0, s, s, 0, 26, age.wall, age.wallDark, age.roof);
     this.door(0, s * 0.5, 0, 'L', p.color.dark); this.window(s, s * 0.35, 12, 'R'); this.window(s, s * 0.7, 12, 'R'); this.window(0, s * 0.2, 12, 'L');
     this.gable(0, 0, s, s, 26, 18, age.roof, age.roofDark);
@@ -407,6 +499,50 @@ const Renderer = {
     const t = this.P(s - 0.4, s - 0.4, 40); this.poly([[t[0] - 12, t[1] + 4], [t[0], t[1] - 14], [t[0] + 12, t[1] + 4]], age.roofDark);
     // team banner on left face
     const bn = this.P(0, s * 0.8, 18); g.fillStyle = p.color.main; g.fillRect(bn[0] - 3, bn[1] - 8, 6, 14); g.fillStyle = age.trim; g.fillRect(bn[0] - 4, bn[1] - 9, 8, 2);
+  },
+  /* The first town hall: a raised deck, timber posts, a hide-and-canvas hip roof with two lean-to wings. */
+  pavilion(b, age, p) {
+    const s = b.size, g = this.g, P = (x, y, z) => this.P(x, y, z);
+    const canvas = '#c9b389', canvasDark = '#a8936c', post = '#7a5a3a', postDark = '#55402a', trim = p.color.main;
+    // deck
+    this.box(0.15, 0.15, s - 0.15, s - 0.15, 0, 5, '#8a6a44', '#6a5034', '#a3845a');
+    g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let k = 0.5; k < s; k += 0.5) { const a = P(k, 0.15, 5), c = P(k, s - 0.15, 5); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); g.stroke(); }
+    const postAt = (x, y, h) => { const a = P(x, y, 5), t = P(x, y, 5 + h); g.strokeStyle = postDark; g.lineWidth = 3.2; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(t[0], t[1]); g.stroke(); g.strokeStyle = post; g.lineWidth = 1.4; g.beginPath(); g.moveTo(a[0] - 0.8, a[1]); g.lineTo(t[0] - 0.8, t[1]); g.stroke(); };
+    const canopyRoof = (x0, y0, x1, y1, z, rise, hip) => {
+      const A = P(x0, y0, z), B = P(x1, y0, z), C = P(x1, y1, z), D = P(x0, y1, z);
+      if (hip) {
+        const M = P((x0 + x1) / 2, (y0 + y1) / 2, z + rise);
+        this.poly([A, B, M], canvasDark); this.poly([B, C, M], U.shade(canvasDark, -0.15)); this.poly([C, D, M], canvas); this.poly([D, A, M], U.shade(canvas, 0.08));
+        g.strokeStyle = 'rgba(60,40,20,0.45)'; g.lineWidth = 1; for (const q of [A, B, C, D]) { g.beginPath(); g.moveTo(M[0], M[1]); g.lineTo(q[0], q[1]); g.stroke(); }
+        // seams in the hide
+        g.strokeStyle = 'rgba(60,40,20,0.3)'; for (let k = 0.3; k < 1; k += 0.35) { g.beginPath(); g.moveTo(U.lerp(D[0], M[0], k), U.lerp(D[1], M[1], k)); g.lineTo(U.lerp(C[0], M[0], k), U.lerp(C[1], M[1], k)); g.stroke(); }
+      } else {
+        const ym = y0; const A2 = P(x0, ym, z + rise), B2 = P(x1, ym, z + rise);
+        this.poly([A2, B2, C, D], canvas); g.strokeStyle = 'rgba(60,40,20,0.3)'; g.lineWidth = 1; for (let k = 0.33; k < 1; k += 0.33) { g.beginPath(); g.moveTo(U.lerp(A2[0], D[0], k), U.lerp(A2[1], D[1], k)); g.lineTo(U.lerp(B2[0], C[0], k), U.lerp(B2[1], C[1], k)); g.stroke(); }
+        this.poly([B2, C, P(x1, y1, z)], U.shade(canvasDark, -0.1));
+      }
+      // team-coloured edging along the eaves
+      g.strokeStyle = trim; g.lineWidth = 2.2; g.beginPath(); g.moveTo(D[0], D[1]); g.lineTo(C[0], C[1]); g.lineTo(B[0], B[1]); g.stroke();
+      g.strokeStyle = U.shade(trim, 0.35); g.lineWidth = 0.8; g.beginPath(); g.moveTo(D[0], D[1] - 1); g.lineTo(C[0], C[1] - 1); g.lineTo(B[0], B[1] - 1); g.stroke();
+    };
+    // wings first (further back / lower), then the central hall
+    for (const [x, y] of [[0.3, 1.9], [1.1, 1.9], [0.3, 2.75], [1.1, 2.75]]) postAt(x, y, 16);
+    canopyRoof(0.2, 1.8, 1.25, 2.85, 21, 8, false);
+    for (const [x, y] of [[1.9, 0.3], [2.75, 0.3], [1.9, 1.1], [2.75, 1.1]]) postAt(x, y, 16);
+    canopyRoof(1.8, 0.2, 2.85, 1.2, 21, 8, false);
+    // central platform and posts
+    this.box(0.75, 0.75, 2.3, 2.3, 5, 6, '#8a6a44', '#6a5034', '#a3845a');
+    for (const [x, y] of [[0.8, 0.8], [2.25, 0.8], [0.8, 2.25], [2.25, 2.25], [1.5, 2.3], [2.3, 1.5]]) postAt(x, y, 34);
+    // railings and cross braces
+    g.strokeStyle = post; g.lineWidth = 1.5; for (const [a, c] of [[[0.8, 2.25], [2.25, 2.25]], [[2.25, 0.8], [2.25, 2.25]]]) for (const z of [17, 22]) { const q0 = P(a[0], a[1], z), q1 = P(c[0], c[1], z); g.beginPath(); g.moveTo(q0[0], q0[1]); g.lineTo(q1[0], q1[1]); g.stroke(); }
+    g.strokeStyle = postDark; g.lineWidth = 1; const b0 = P(0.8, 2.25, 11), b1 = P(2.25, 2.25, 28), b2 = P(0.8, 2.25, 28), b3 = P(2.25, 2.25, 11); g.beginPath(); g.moveTo(b0[0], b0[1]); g.lineTo(b1[0], b1[1]); g.moveTo(b2[0], b2[1]); g.lineTo(b3[0], b3[1]); g.stroke();
+    // stores under the roof: crates, sacks, a barrel
+    const cr = P(1.3, 1.3, 11); g.fillStyle = '#8a6a44'; g.fillRect(cr[0] - 6, cr[1] - 10, 12, 9); g.fillStyle = '#a3845a'; g.fillRect(cr[0] - 6, cr[1] - 10, 12, 2);
+    const sk = P(1.9, 1.7, 11); this.ell(sk[0], sk[1] - 3, 5, 3.5, '#c9a66b'); this.ell(sk[0] - 7, sk[1] - 1, 4.5, 3, '#b8955c');
+    const br = P(0.5, 2.55, 5); this.ell(br[0], br[1] - 7, 4, 2.2, '#6a4a2a'); g.fillStyle = '#7a5a3a'; g.fillRect(br[0] - 4, br[1] - 7, 8, 7); this.ell(br[0], br[1], 4, 2.2, '#5a3f22');
+    canopyRoof(0.65, 0.65, 2.4, 2.4, 39, 16, true);
+    // a small hearth in the yard
+    const fh = P(2.6, 2.6, 0); this.ell(fh[0], fh[1], 4.5, 2.3, '#4a4038'); g.fillStyle = '#e07a2a'; g.fillRect(fh[0] - 1.5, fh[1] - 3, 3, 2.5); g.fillStyle = '#ffd060'; g.fillRect(fh[0] - 0.5, fh[1] - 4, 1.2, 1.5);
   },
   shape_barn(b, age, p) {
     const s = b.size; this.box(0, 0, s, s, 0, 18, age.wall, age.wallDark, age.roof);
@@ -455,7 +591,7 @@ const Renderer = {
     this.door(s, s * 0.3, 0, 'R', '#4a3320');
     // paddock fence and a horse
     g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.5; const f = [this.P(0, s * 0.6), this.P(0, s), this.P(s, s), this.P(s, s * 0.6)]; g.beginPath(); g.moveTo(f[0][0], f[0][1]); for (const q of f.slice(1)) g.lineTo(q[0], q[1]); g.stroke();
-    const hp = this.P(s * 0.45, s * 0.82, 0); this.horse(hp[0], hp[1], '#7a5a3a', 1, 0);
+    const hp = this.P(s * 0.45, s * 0.82, 0); this.horse(hp[0], hp[1], '#7a5a3a', p.color, 0);
     const hay = this.P(s * 0.85, s * 0.8, 0); this.ell(hay[0], hay[1], 7, 4, '#d8b860'); this.ell(hay[0], hay[1] - 3, 5, 3, '#e8cc78');
   },
   shape_smithy(b, age, p) {
@@ -510,16 +646,30 @@ const Renderer = {
     this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s / 2, s / 2, 92)], '#e0c060'); this.poly([this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#b08a30'); this.poly([this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#d8b040');
   },
   shape_farm(b, age, p) {
-    const g = this.g, s = b.size;
-    const A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
-    this.poly([A, B, C, D], World.T.id === 'tundra' ? '#8a7a5a' : '#8a6a3a');
-    g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 2;
-    for (let k = 1; k < 8; k++) { const t = k / 8; const p0 = this.P(t * s, 0), p1 = this.P(t * s, s); g.beginPath(); g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]); g.stroke(); }
-    // crops
-    const grown = b.worker && !b.worker.dead ? 1 : 0.6;
-    g.fillStyle = U.alpha('#8fb84a', 0.9);
-    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { const q = this.P((i + 0.5) / 8 * s, (j + 0.5) / 8 * s); g.beginPath(); g.arc(q[0], q[1] - 3 * grown, 1.8 * grown, 0, 7); g.fill(); }
-    g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(A[0], A[1] - 3); g.lineTo(B[0], B[1] - 3); g.lineTo(C[0], C[1] - 3); g.lineTo(D[0], D[1] - 3); g.closePath(); g.stroke();
+    const g = this.g, s = b.size, P = (x, y) => this.P(x, y);
+    const A = P(0, 0), B = P(s, 0), C = P(s, s), D = P(0, s);
+    const soil = World.T.id === 'tundra' ? '#6f6250' : World.T.id === 'desert' ? '#8a6a3c' : '#6b4b2a';
+    this.poly([A, B, C, D], soil);
+    const grown = b.worker && !b.worker.dead;
+    // furrows run along the x axis; each carries a row of plants
+    const rows = 7;
+    for (let k = 0; k < rows; k++) {
+      const t = (k + 0.5) / rows;
+      const a = P(0.08, t * s), c = P(s - 0.08, t * s);
+      g.strokeStyle = U.alpha('#000000', 0.35); g.lineWidth = 2.2; g.beginPath(); g.moveTo(a[0], a[1] + 1); g.lineTo(c[0], c[1] + 1); g.stroke();
+      g.strokeStyle = U.alpha('#ffffff', 0.12); g.lineWidth = 1; g.beginPath(); g.moveTo(a[0], a[1] - 1); g.lineTo(c[0], c[1] - 1); g.stroke();
+      const steps = Math.round(s * 9);
+      for (let i = 1; i < steps; i++) {
+        const f = i / steps, x = U.lerp(a[0], c[0], f), y = U.lerp(a[1], c[1], f);
+        if (grown) { g.strokeStyle = (i + k) % 3 ? '#c9a23a' : '#a8842a'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x, y); g.lineTo(x - 1, y - 6); g.moveTo(x, y); g.lineTo(x + 1.5, y - 5); g.stroke(); g.fillStyle = '#e0c060'; g.fillRect(x - 1.5, y - 7, 2, 2); }
+        else { g.fillStyle = (i + k) % 2 ? '#5f8a3a' : '#4f7a30'; g.fillRect(x - 1, y - 3, 2, 3); }
+      }
+    }
+    // post-and-rail fence around the field
+    const rail = '#5a3f22', railLight = '#8a6a44';
+    const edges = [[A, B], [B, C], [C, D], [D, A]];
+    for (const [p0, p1] of edges) { g.strokeStyle = rail; g.lineWidth = 1.5; g.beginPath(); g.moveTo(p0[0], p0[1] - 5); g.lineTo(p1[0], p1[1] - 5); g.moveTo(p0[0], p0[1] - 2); g.lineTo(p1[0], p1[1] - 2); g.stroke(); }
+    for (const [p0, p1] of edges) for (let t = 0; t <= 1; t += 1 / (s * 2)) { const x = U.lerp(p0[0], p1[0], t), y = U.lerp(p0[1], p1[1], t); g.fillStyle = railLight; g.fillRect(x - 1, y - 8, 2, 8); g.fillStyle = rail; g.fillRect(x, y - 8, 1, 8); }
   },
 
   drawGhost(gh) {
@@ -544,7 +694,7 @@ const Renderer = {
     const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + zq.toFixed(3);
     let sp = this.sprites.get(key);
     if (!sp) {
-      const k = this.spriteK(zq), W = Math.ceil(56 * k), H = Math.ceil(60 * k), ax = W / 2, ay = H - 8 * k;
+      const k = this.spriteK(zq), W = Math.ceil(64 * k), H = Math.ceil(72 * k), ax = W / 2, ay = H - 8 * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
@@ -558,54 +708,77 @@ const Renderer = {
     }
     const [sx, sy] = this.toScreen(u.x, u.y, 0);
     this.stamp(sp, sx, sy);
-    u.sx = sx; u.sy = sy; u.sh = (u.def.cls === 'cavalry' ? 38 : u.def.cls === 'siege' ? 26 : 30) * z;
+    u.sx = sx; u.sy = sy; u.sh = (u.def.cls === 'cavalry' ? 46 : u.def.cls === 'siege' ? 26 : 34) * z;
   },
-  /* Vector figure at the origin, feet on y = 0, facing right. About 26 px tall at zoom 1. */
+  /* A person at the origin, feet on y = 0, facing right, about 32 px tall at zoom 1. `walk` in [-1, 1],
+     `swing` in [0, 1] raises the working arm. Team colour on the tunic; villagers wear undyed cloth with a sash. */
   drawUnitVector(u, p, flip, walk, swing) {
-    const g = this.g, col = p.color;
-    const skin = ['#d8b48e', '#c99a6c', '#a97448', '#7d5232'][u.id % 4];
-    this.castShadow(0, 0, u.def.cls === 'cavalry' ? 24 : u.def.cls === 'siege' ? 26 : 12, u.def.cls === 'cavalry' ? 5 : 3);
-    g.save(); g.scale(flip, 1);
-    if (u.def.cls === 'siege') { this.catapult(u, col); g.restore(); return; }
+    const g = this.g, col = p.color, age = p.age, cls = u.def.cls;
+    const skin = ['#e0b898', '#cfa07a', '#a8744c', '#7a5236'][u.id % 4], hair = ['#3a2a1a', '#6a4a2a', '#c9a060', '#1a1a1a'][(u.id >> 2) % 4];
+    this.castShadow(0, 0, cls === 'cavalry' ? 26 : cls === 'siege' ? 26 : 12, cls === 'cavalry' ? 5 : 3);
+    g.save(); g.scale(flip, 1); g.lineCap = 'round'; g.lineJoin = 'round';
+    if (cls === 'siege') { this.catapult(u, col); g.restore(); return; }
     let by = 0;
-    if (u.def.cls === 'cavalry') { this.horse(0, 0, ['#4f3220', '#7a5a3c', '#b8a68c', '#332a28'][u.id % 4], 1, walk); by = -12; }
-    g.lineCap = 'round';
-    // legs and boots
-    if (u.def.cls !== 'cavalry') { g.strokeStyle = '#3a2c24'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(-1.8, by - 9); g.lineTo(-2 + walk * 3, by); g.moveTo(1.8, by - 9); g.lineTo(2 - walk * 3, by); g.stroke(); }
-    // torso: tunic in team colour (villagers in undyed cloth with a team sash)
-    const bodyCol = u.def.cls === 'villager' ? '#8f7a5a' : col.main;
-    g.fillStyle = bodyCol; g.beginPath(); g.roundRect(-4, by - 19, 8, 10.5, 2.5); g.fill();
-    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(-4, by - 11, 8, 2.5);
-    g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(-4, by - 19, 3, 8);
-    if (u.def.cls === 'villager') { g.fillStyle = col.main; g.fillRect(-4, by - 15, 8, 2); }
-    if (u.def.cls === 'infantry' || u.def.cls === 'cavalry') { g.fillStyle = p.age >= 2 ? '#9aa0a8' : '#5a4634'; g.fillRect(-4, by - 19, 8, 2.5); }
-    // arms
-    g.strokeStyle = skin; g.lineWidth = 2; g.beginPath(); g.moveTo(3.5, by - 17); g.lineTo(6 + swing * 3, by - 11 - swing * 6); g.stroke();
-    // head and helm
-    this.ell(0, by - 22, 3, 3.3, skin);
-    const age = p.age;
-    if (u.def.cls === 'villager') { g.fillStyle = '#a8894a'; g.beginPath(); g.ellipse(0, by - 23.5, 5.5, 1.8, 0, 0, 7); g.fill(); this.ell(0, by - 24.5, 3.2, 2, '#b89a58'); }
-    else if (u.def.cls === 'archer') { g.fillStyle = age >= 2 ? '#7f858c' : '#4d6a32'; g.beginPath(); g.moveTo(-3.5, by - 22.5); g.lineTo(0, by - 29); g.lineTo(3.5, by - 22.5); g.closePath(); g.fill(); }
-    else { g.fillStyle = age >= 2 ? '#aab0b8' : age >= 1 ? '#7d6e52' : '#5d4d3f'; g.beginPath(); g.arc(0, by - 23, 3.6, Math.PI, 0); g.fill(); g.fillRect(-3.6, by - 23, 7.2, 1.5); if (age >= 3) { g.fillStyle = col.light; g.fillRect(-0.7, by - 30, 1.4, 4.5); } }
-    // weapon or tool
+    if (cls === 'cavalry') { this.horse(0, 0, ['#4f3220', '#7a5a3c', '#b8a68c', '#332a28'][u.id % 4], col, walk); by = -15; }
+    const tunic = cls === 'villager' ? '#9c8461' : col.main, tunicDark = cls === 'villager' ? '#6f5a40' : col.dark;
+    const armour = age >= 3 ? '#b4bac4' : age >= 2 ? '#8d939c' : age >= 1 ? '#6f5b44' : '#5a4738';
+    // back arm
+    g.strokeStyle = skin; g.lineWidth = 2.4; g.beginPath(); g.moveTo(-3.5, by - 21); g.lineTo(-5 - walk * 2, by - 14); g.lineTo(-4 - walk * 3, by - 9); g.stroke();
+    // legs: trousers and boots, striding when walking
+    if (cls !== 'cavalry') {
+      g.strokeStyle = cls === 'villager' ? '#5d4a36' : tunicDark; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(-1.5, by - 12); g.lineTo(-2 + walk * 3.5, by - 6); g.lineTo(-2.5 + walk * 4, by - 1); g.stroke();
+      g.beginPath(); g.moveTo(1.5, by - 12); g.lineTo(2 - walk * 3.5, by - 6); g.lineTo(2.5 - walk * 4, by - 1); g.stroke();
+      g.fillStyle = '#2e2119'; g.fillRect(-4 + walk * 4, by - 2, 4.5, 2.2); g.fillRect(1 - walk * 4, by - 2, 4.5, 2.2);
+    } else { g.strokeStyle = tunicDark; g.lineWidth = 3; g.beginPath(); g.moveTo(1, by - 12); g.lineTo(4, by - 6); g.lineTo(4.5, by - 2); g.stroke(); g.fillStyle = '#2e2119'; g.fillRect(3, by - 3, 4, 2); }
+    // torso: shoulders wider than the waist, belt, tunic skirt for villagers
+    this.poly([[-5, by - 24], [5, by - 24], [3.8, by - 13], [-3.8, by - 13]], tunic);
+    if (cls === 'villager') this.poly([[-3.8, by - 13], [3.8, by - 13], [4.5, by - 9], [-4.5, by - 9]], tunicDark);
+    g.fillStyle = 'rgba(255,255,255,0.16)'; this.poly([[-5, by - 24], [-1.5, by - 24], [-1, by - 13], [-3.8, by - 13]], 'rgba(255,255,255,0.14)');
+    g.fillStyle = '#3a2a1a'; g.fillRect(-4, by - 14.5, 8, 1.6);
+    if (cls === 'villager') { g.fillStyle = col.main; this.poly([[-5, by - 24], [-2, by - 24], [3.8, by - 13], [1.5, by - 13]], col.main); }
+    if (cls === 'infantry' || cls === 'cavalry') { this.poly([[-5.5, by - 24.5], [5.5, by - 24.5], [4.5, by - 19], [-4.5, by - 19]], armour); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-5, by - 24, 3, 2); }
+    if (cls === 'archer') { g.strokeStyle = '#5a3f22'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-4, by - 24); g.lineTo(4, by - 14); g.stroke(); }
+    // neck and head with hair, eye and a hint of a nose
+    g.fillStyle = skin; g.fillRect(-1.2, by - 27, 2.6, 3.5);
+    this.ell(0.4, by - 29.5, 3.6, 3.9, skin);
+    g.fillStyle = hair; g.beginPath(); g.arc(0.2, by - 30.2, 3.7, Math.PI * 1.05, Math.PI * 2.05); g.fill(); g.fillRect(-3.4, by - 31, 2, 3.5);
+    g.fillStyle = '#1a1010'; g.fillRect(2.2, by - 30, 1.1, 1.1); g.fillStyle = U.shade(skin, -0.18); g.fillRect(3.4, by - 29, 1, 1.4);
+    // headgear
+    if (cls === 'villager') { g.fillStyle = '#a8894a'; g.beginPath(); g.ellipse(0.4, by - 31.5, 6.2, 1.9, 0, 0, 7); g.fill(); this.ell(0.4, by - 32.6, 3.6, 2.2, '#b89a58'); }
+    else if (cls === 'archer') { this.poly([[-4, by - 30], [0.5, by - 37], [5, by - 30]], age >= 2 ? '#7f858c' : '#4d6a32'); g.fillStyle = '#c9a23a'; g.fillRect(3.5, by - 33, 1, 3); }
+    else { g.fillStyle = armour; g.beginPath(); g.arc(0.4, by - 30.5, 4.2, Math.PI, 0); g.fill(); g.fillRect(-3.8, by - 30.5, 8.4, 2); if (age >= 2) g.fillRect(-0.5, by - 30, 1.2, 4); if (age >= 3) { g.fillStyle = col.light; g.fillRect(-0.4, by - 38, 1.4, 7); } if (age >= 1) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(-3, by - 33, 2.5, 1.2); } }
+    // front arm and what it holds
+    const hx = 6.5 + swing * 3, hy = by - 15 - swing * 8;
+    g.strokeStyle = skin; g.lineWidth = 2.4; g.beginPath(); g.moveTo(4, by - 21.5); g.lineTo(6.5 + swing, by - 18 - swing * 3); g.lineTo(hx, hy); g.stroke();
     if (u.type === 'villager') {
-      if (u.carry.amt > 0) { const c = RESOURCE_INFO[u.carry.kind].color; g.fillStyle = c; g.beginPath(); g.roundRect(-8.5, by - 20, 5.5, 6.5, 1.5); g.fill(); }
-      g.strokeStyle = '#5a4128'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(6 + swing * 3, by - 11 - swing * 6); g.lineTo(8 + swing * 3, by - 21 - swing * 5); g.stroke(); g.fillStyle = '#8a8f96'; g.fillRect(6.5 + swing * 3, by - 23 - swing * 5, 4, 3);
-    } else if (u.type === 'spearman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(6, by - 2); g.lineTo(9 + swing * 6, by - 29 - swing * 2); g.stroke(); this.poly([[8 + swing * 6, by - 28 - swing * 2], [10 + swing * 6, by - 34 - swing * 2], [12 + swing * 6, by - 28 - swing * 2]], '#c0c6ce'); this.ell(-6.5, by - 13, 3.5, 4.5, col.dark, '#2e2119'); }
-    else if (u.type === 'swordsman' || u.type === 'knight') { g.strokeStyle = '#c8ccd4'; g.lineWidth = 2; g.beginPath(); g.moveTo(6 + swing * 3, by - 11 - swing * 6); g.lineTo(12 + swing * 6, by - 23 - swing * 4); g.stroke(); g.strokeStyle = '#5a4128'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(5 + swing * 3, by - 13 - swing * 6); g.lineTo(8 + swing * 3, by - 12 - swing * 6); g.stroke(); this.ell(-6.5, by - 13, 4.2, 5, col.dark, age >= 2 ? '#c0c6ce' : '#2e2119'); }
-    else if (u.type === 'horseman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(6, by - 4); g.lineTo(12 + swing * 6, by - 27); g.stroke(); this.poly([[11 + swing * 6, by - 26], [13 + swing * 6, by - 32], [15 + swing * 6, by - 26]], '#c0c6ce'); }
-    else if (u.def.cls === 'archer') { g.strokeStyle = '#5a4128'; g.lineWidth = 1.8; g.beginPath(); g.arc(7, by - 15, 8, -Math.PI * 0.55, Math.PI * 0.55); g.stroke(); g.strokeStyle = '#d8d0c0'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(7 + 8 * Math.cos(-Math.PI * 0.55), by - 15 + 8 * Math.sin(-Math.PI * 0.55)); g.lineTo(7 + 8 * Math.cos(Math.PI * 0.55), by - 15 + 8 * Math.sin(Math.PI * 0.55)); g.stroke(); g.fillStyle = '#6a4d30'; g.fillRect(-7, by - 21, 3, 9); }
+      if (u.carry.amt > 0) { const c = RESOURCE_INFO[u.carry.kind].color; g.fillStyle = c; g.beginPath(); g.roundRect(-9.5, by - 25, 6, 7.5, 1.5); g.fill(); g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-9.5, by - 21, 6, 1); }
+      g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(hx, hy + 4); g.lineTo(hx + 2, hy - 10); g.stroke(); this.poly([[hx + 1, hy - 11], [hx + 6, hy - 12], [hx + 6, hy - 7.5], [hx + 2, hy - 8]], '#9aa0a8');
+    } else if (u.type === 'spearman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 1, by - 2); g.lineTo(hx + 3 + swing * 5, by - 36 - swing * 2); g.stroke(); this.poly([[hx + 1.5 + swing * 5, by - 35 - swing * 2], [hx + 3 + swing * 5, by - 42 - swing * 2], [hx + 4.5 + swing * 5, by - 35 - swing * 2]], '#c0c6ce'); this.shield(-7.5, by - 15, 4.5, 5.5, col, age); }
+    else if (u.type === 'swordsman' || u.type === 'knight') { g.strokeStyle = '#d0d4dc'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + 7 + swing * 4, hy - 13 - swing * 2); g.stroke(); g.strokeStyle = '#5a4128'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(hx - 1.5, hy - 1); g.lineTo(hx + 2.5, hy + 1); g.stroke(); this.shield(-7.5, by - 15, 5, 6.5, col, age); }
+    else if (u.type === 'horseman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 2, by - 4); g.lineTo(hx + 6 + swing * 5, by - 34); g.stroke(); this.poly([[hx + 4.5 + swing * 5, by - 33], [hx + 6 + swing * 5, by - 40], [hx + 7.5 + swing * 5, by - 33]], '#c0c6ce'); }
+    else if (cls === 'archer') { g.strokeStyle = '#5a4128'; g.lineWidth = 2; g.beginPath(); g.arc(hx + 1, hy, 10, -Math.PI * 0.5, Math.PI * 0.5); g.stroke(); g.strokeStyle = '#e8e0d0'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(hx + 1, hy - 10); g.lineTo(hx + 1, hy + 10); g.stroke(); g.fillStyle = '#6a4d30'; g.fillRect(-8, by - 27, 3, 11); g.fillStyle = '#e8e0d0'; g.fillRect(-8, by - 29, 3, 2); }
     g.restore();
   },
-  horse(x, y, col, k, walk) {
-    const g = this.g;
-    g.strokeStyle = U.shade(col, -0.2); g.lineWidth = 2.2; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(x - 7, y - 8); g.lineTo(x - 7 + walk * 3, y); g.moveTo(x - 4, y - 8); g.lineTo(x - 4 - walk * 3, y); g.moveTo(x + 5, y - 8); g.lineTo(x + 5 - walk * 3, y); g.moveTo(x + 8, y - 8); g.lineTo(x + 8 + walk * 3, y); g.stroke();
-    this.ell(x, y - 12, 11 * k, 5.5 * k, col);
-    g.fillStyle = col; g.beginPath(); g.moveTo(x + 8, y - 14); g.lineTo(x + 14, y - 22); g.lineTo(x + 18, y - 19); g.lineTo(x + 12, y - 12); g.closePath(); g.fill();
-    this.ell(x + 16, y - 20, 3.5, 2.6, col);
-    g.strokeStyle = U.shade(col, -0.35); g.lineWidth = 2; g.beginPath(); g.moveTo(x + 9, y - 17); g.quadraticCurveTo(x + 12, y - 23, x + 15, y - 22); g.stroke();
-    g.beginPath(); g.moveTo(x - 10, y - 13); g.quadraticCurveTo(x - 15, y - 10, x - 13, y - 3); g.stroke();
+  shield(x, y, rx, ry, col, age) { this.ell(x, y, rx, ry, col.dark, age >= 2 ? '#c0c6ce' : '#2e2119'); this.ell(x, y, 1.3, 1.3, age >= 2 ? '#c0c6ce' : '#8a6a44'); },
+  horse(x, y, col, team, walk) {
+    const g = this.g, dark = U.shade(col, -0.3), light = U.shade(col, 0.2);
+    g.lineCap = 'round'; g.strokeStyle = dark; g.lineWidth = 2.6;
+    // far legs, body, near legs
+    g.beginPath(); g.moveTo(x - 8, y - 10); g.lineTo(x - 9 + walk * 3, y - 5); g.lineTo(x - 9 + walk * 4, y); g.moveTo(x + 7, y - 10); g.lineTo(x + 8 - walk * 3, y - 5); g.lineTo(x + 9 - walk * 4, y); g.stroke();
+    this.ell(x, y - 15, 13, 6.5, col);
+    g.strokeStyle = col; g.lineWidth = 2.8; g.beginPath(); g.moveTo(x - 6, y - 11); g.lineTo(x - 7 - walk * 3, y - 5); g.lineTo(x - 8 - walk * 4, y); g.moveTo(x + 9, y - 11); g.lineTo(x + 10 + walk * 3, y - 5); g.lineTo(x + 11 + walk * 4, y); g.stroke();
+    g.fillStyle = '#2a2020'; for (const hx of [x - 9 + walk * 4, x + 9 - walk * 4, x - 8 - walk * 4, x + 11 + walk * 4]) g.fillRect(hx - 1.5, y - 1.5, 3, 2);
+    // neck and head
+    this.poly([[x + 9, y - 19], [x + 13, y - 20], [x + 19, y - 29], [x + 15, y - 31], [x + 8, y - 15]], col);
+    this.ell(x + 19.5, y - 29, 4.2, 2.6, col); this.poly([[x + 22, y - 30], [x + 25, y - 28.5], [x + 22, y - 27]], light);
+    g.fillStyle = '#1a1010'; g.fillRect(x + 19, y - 30.5, 1.2, 1.2);
+    g.strokeStyle = dark; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x + 10, y - 21); g.quadraticCurveTo(x + 14, y - 28, x + 17, y - 31); g.stroke(); // mane
+    g.beginPath(); g.moveTo(x - 12, y - 16); g.quadraticCurveTo(x - 17, y - 12, x - 15, y - 3); g.stroke(); // tail
+    // saddle cloth in team colour and reins
+    this.poly([[x - 5, y - 19], [x + 5, y - 19], [x + 6, y - 12], [x - 6, y - 12]], team.main); g.fillStyle = team.light; g.fillRect(x - 5, y - 13, 11, 1);
+    g.strokeStyle = '#3a2a1a'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x + 4, y - 22); g.lineTo(x + 18, y - 28); g.stroke();
+    this.ell(x + 1, y - 13, 1.3, 1.3, light);
   },
   catapult(u, col) {
     const g = this.g;
@@ -675,7 +848,7 @@ const Renderer = {
     const tf = () => { mg.setTransform(k, k * 0.5, -k, k * 0.5, S / 2, 0); };
     tf(); mg.imageSmoothingEnabled = false; mg.drawImage(this.miniTerrain, 0, 0);
     // resources
-    for (const r of World.res) { if (!World.explored[World.idx(r.x, r.y)] && !Game.settings.reveal) continue; mg.fillStyle = r.kind === 'tree' ? World.T.canopyDark : r.kind === 'gold' ? '#e0b43c' : r.kind === 'stone' ? '#b8bcc4' : '#d0405c'; mg.fillRect(r.x, r.y, 1, 1); }
+    for (const r of World.res) { if (!World.explored[World.idx(r.x, r.y)] && !Game.settings.reveal) continue; mg.fillStyle = r.kind === 'tree' ? World.T.canopyDark : r.kind === 'gold' ? '#e0b43c' : r.kind === 'stone' ? '#b8bcc4' : r.kind === 'fish' ? '#8fd0e8' : '#d0405c'; mg.fillRect(r.x, r.y, 1, 1); }
     for (const b of Game.buildings) { if (b.dead) continue; if (!Game.settings.reveal && !World.explored[World.idx(b.tx, b.ty)]) continue; mg.fillStyle = Game.players[b.owner].color.main; mg.fillRect(b.tx - 0.3, b.ty - 0.3, b.size + 0.6, b.size + 0.6); }
     for (const u of Game.units) { if (u.dead) continue; if (u.owner !== Game.human && !Game.settings.reveal && !World.visible[World.idx(Math.floor(u.x), Math.floor(u.y))]) continue; mg.fillStyle = Game.players[u.owner].color.light; mg.fillRect(u.x - 0.7, u.y - 0.7, 1.4, 1.4); }
     if (!Game.settings.reveal) mg.drawImage(this.miniFog, 0, 0);

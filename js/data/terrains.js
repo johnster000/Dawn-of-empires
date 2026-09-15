@@ -2,9 +2,9 @@
 const TERRAINS = {
   meadow: {
     name: 'Meadow', blurb: 'Rolling green, oak forests and gentle lakes. The classic start.',
-    ground: ['#4a6a2c', '#557634', '#5f7f3a', '#6a8842'], dirt: '#7d6a3e', shore: '#a9985f', shoreDark: '#87784a',
+    ground: ['#7a9140', '#86a049', '#92ab51', '#9cb45a'], dirt: '#c3aa72', shore: '#d4c18b', shoreDark: '#b39f6c',
     water: '#2f6390', waterDeep: '#244d74', waterLight: '#5d8fb8',
-    canopy: ['#2f5a29', '#386a30', '#427636', '#4c813d'], canopyDark: '#213f1d', trunk: '#5a3f24',
+    canopy: ['#2f6229', '#376e31', '#3f7a38', '#478440'], canopyDark: '#22421d', trunk: '#5a3f24',
     rock: '#7f7c74', rockDark: '#57544d', gold: '#c99a2c', berry: '#a8323f', bush: '#33652b',
     treeShape: 'oak', treeDensity: 1.0, waterLevel: 0.33, stone: 1.0, goldOre: 1.0, berries: 1.0, roughness: 1.0,
   },
@@ -26,7 +26,7 @@ const TERRAINS = {
   },
   highlands: {
     name: 'Highlands', blurb: 'Heather moors broken by crags and many small lochs. Chokepoints everywhere.',
-    ground: ['#5a6838', '#65743f', '#6f7e46', '#78874d'], dirt: '#6e5c3a', shore: '#958a5e', shoreDark: '#766c48',
+    ground: ['#6f7f42', '#7a8a4a', '#849351', '#8e9c58'], dirt: '#a68f5e', shore: '#b5a473', shoreDark: '#94855a',
     water: '#39627e', waterDeep: '#2a4a60', waterLight: '#648ea8',
     canopy: ['#33552f', '#3d6237', '#476e3f', '#527947'], canopyDark: '#243f22', trunk: '#4e3a28',
     rock: '#726f66', rockDark: '#4d4a43', gold: '#c59d33', berry: '#a3427a', bush: '#3f6538',

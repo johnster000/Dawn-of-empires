@@ -1,7 +1,7 @@
 /* Players, units and buildings, plus the per-tick simulation of what they do. */
 
-const GATHER_RATE = { berry: 0.5, tree: 0.55, stone: 0.45, gold: 0.45, farm: 0.48 };
-const RES_KIND = { berry: 'food', tree: 'wood', stone: 'stone', gold: 'gold', farm: 'food' };
+const GATHER_RATE = { berry: 0.5, tree: 0.55, stone: 0.45, gold: 0.45, farm: 0.48, fish: 0.5 };
+const RES_KIND = { berry: 'food', tree: 'wood', stone: 'stone', gold: 'gold', farm: 'food', fish: 'food' };
 const BASE_CARRY = 10;
 /* Resource kind of a gather target: natural resources carry their own kind; a farm is a building. */
 const rk = (r) => (r && r.kind === 'building' ? 'farm' : r ? r.kind : null);
@@ -311,7 +311,7 @@ const Sim = {
     let next = null;
     if (kind === 'farm') next = Sim.freeFarm(u, 14);
     else if (kind) next = World.nearestResource(kind, ox, oy, 10, (rr) => rr !== old && (rr.workers || 0) < (kind === 'tree' ? 2 : 4)) || World.nearestResource(kind, ox, oy, 14, (rr) => rr !== old);
-    if (!next && kind === 'berry') next = Sim.freeFarm(u, 12);
+    if (!next && (kind === 'berry' || kind === 'fish')) next = World.nearestResource(kind === 'berry' ? 'fish' : 'berry', ox, oy, 12) || Sim.freeFarm(u, 12);
     if (next) { const carry = u.carry.amt; Sim.setOrder(u, { type: 'gather', res: next, dropoff: o.dropoff }); if (carry >= u.carryCap - 0.001) u.order.phase = 'return'; }
     else { if (u.carry.amt > 0) { Sim.setOrder(u, { type: 'gather', res: null, dropoff: o.dropoff, phase: 'return' }); u.order.phase = 'return'; } else { Sim.idle(u); Game.onIdleVillager(u); } }
   },
@@ -362,7 +362,7 @@ const Sim = {
   afterBuild(u, b) {
     if (b.def.farm && (!b.worker || b.worker.dead || b.worker === u)) { Sim.setOrder(u, { type: 'gather', res: b }); return; }
     if (b.def.dropoff && b.type !== 'townhall') {
-      for (const kind of ['tree', 'berry', 'stone', 'gold']) {
+      for (const kind of ['tree', 'berry', 'fish', 'stone', 'gold']) {
         if (!b.def.dropoff.includes(RES_KIND[kind])) continue;
         const r = World.nearestResource(kind, b.x, b.y, 7);
         if (r) { Sim.setOrder(u, { type: 'gather', res: r, dropoff: b }); return; }

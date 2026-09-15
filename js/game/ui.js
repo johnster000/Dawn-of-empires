@@ -214,7 +214,7 @@ const UI = {
     if (o.type === 'move') return 'Moving'; if (o.type === 'attackmove') return 'Advancing';
     if (o.type === 'attack') return 'Attacking ' + (o.target ? o.target.def.name : '');
     if (o.type === 'build') return (o.bld && o.bld.built ? 'Repairing ' : 'Building ') + (o.bld ? o.bld.def.name : '');
-    if (o.type === 'gather') { const r = o.res; if (o.phase === 'return') return 'Returning ' + (u.carry.kind || ''); const k = rk(r) || ''; return { tree: 'Chopping wood', berry: 'Picking berries', stone: 'Quarrying stone', gold: 'Mining gold', farm: 'Farming' }[k] || 'Gathering'; }
+    if (o.type === 'gather') { const r = o.res; if (o.phase === 'return') return 'Returning ' + (u.carry.kind || ''); const k = rk(r) || ''; return { tree: 'Chopping wood', berry: 'Picking berries', stone: 'Quarrying stone', gold: 'Mining gold', farm: 'Farming', fish: 'Fishing' }[k] || 'Gathering'; }
     return '';
   },
 
