@@ -171,6 +171,8 @@ const Renderer = {
       else if (it.k === 'fx') this.drawEffect(it.o);
       else if (it.k === 'ghost') this.drawGhost(it.o);
     }
+    // your own people show through whatever hides them, as a faint silhouette
+    for (const u of Game.units) if (!u.dead && u.owner === Game.human && u.spr && u.sx != null && inView(u.x, u.y) && this.occluded(u)) { g.globalAlpha = 0.5; this.stamp(u.spr, u.sx, u.sy); g.globalAlpha = 1; }
     // fog of war over everything in the world, then interface overlays on top
     if (!reveal) { if (this.fogDirty) this.updateFogTex(); this.drawMapImage(this.fogTex, 1, x0, y0, x1, y1); }
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -685,35 +687,68 @@ const Renderer = {
 
   /* ---- units ---- */
   drawRing(u) { this.at(u.x, u.y, 0); const g = this.g; g.lineWidth = 1.2; this.ell(0, 1, u.def.cls === 'cavalry' ? 16 : 11, u.def.cls === 'cavalry' ? 8 : 5.5, null, '#f4f0e0'); },
+  /* Which tool a villager holds, and whether they are mid-task (which drives the work cycle). */
+  unitPose(u) {
+    const o = u.order; let tool = 'axe', working = false;
+    if (u.type === 'villager' && o) {
+      if (o.type === 'gather' && o.res) { const k = rk(o.res); tool = { tree: 'axe', stone: 'pick', gold: 'pick', farm: 'hoe', berry: 'basket', fish: 'rod' }[k] || 'axe'; working = o.phase === 'gathering'; }
+      else if (o.type === 'build') { tool = 'hammer'; working = !u.moving && !u.path; }
+    }
+    return { tool, working };
+  },
   drawUnit(u) {
     const z = this.cam.zoom, zq = this.zq(z), p = Game.players[u.owner];
     const sdx = Math.cos(u.face) - Math.sin(u.face), flip = sdx < 0 ? 1 : 0;
     const frame = u.moving ? (Math.floor((u.anim * 2) / (Math.PI / 2)) & 3) : 0;
-    const swing = u.swing > 0.15 ? 2 : u.swing > 0 ? 1 : 0;
+    const pose = this.unitPose(u);
+    // work cycle: four frames of raise, swing, strike, recover; soldiers use the attack timer instead
+    let swing = u.swing > 0.2 ? 2 : u.swing > 0 ? 1 : 0;
+    if (pose.working) swing = 3 + (Math.floor((u.anim % (Math.PI * 2)) / (Math.PI * 2) * 4) & 3);
     const carry = u.carry.amt > 0 ? u.carry.kind : '';
-    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + zq.toFixed(3);
+    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + pose.tool + '|' + zq.toFixed(3);
     let sp = this.sprites.get(key);
     if (!sp) {
-      const k = this.spriteK(zq), W = Math.ceil(64 * k), H = Math.ceil(72 * k), ax = W / 2, ay = H - 8 * k;
+      const k = this.spriteK(zq), W = Math.ceil(72 * k), H = Math.ceil(76 * k), ax = W / 2, ay = H - 8 * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const walk = [0, 1, 0, -1][frame];
+      const sw = swing >= 3 ? [1, 0.55, -0.3, 0.15][swing - 3] : swing === 2 ? 1 : swing === 1 ? -0.3 : 0.1;
       this.at(0, 0, 0);
-      this.drawUnitVector(u, p, flip ? -1 : 1, walk, swing === 2 ? 1 : swing === 1 ? 0.5 : 0);
+      this.drawUnitVector(u, p, flip ? -1 : 1, walk, sw, pose.tool, swing >= 3);
       this.oldSchool(cv, 8);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
       sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
-      if (this.sprites.size > 500) this.sprites.clear();
+      if (this.sprites.size > 700) this.sprites.clear();
     }
     const [sx, sy] = this.toScreen(u.x, u.y, 0);
-    this.stamp(sp, sx, sy);
+    this.stamp(sp, sx, sy); u.spr = sp;
     u.sx = sx; u.sy = sy; u.sh = (u.def.cls === 'cavalry' ? 46 : u.def.cls === 'siege' ? 26 : 34) * z;
+  },
+  /* Is this unit hidden behind a tree crown or a building that draws after it? */
+  occluded(u) {
+    const ux = Math.floor(u.x), uy = Math.floor(u.y), d0 = u.x + u.y, z = this.cam.zoom, headY = u.sy - 18 * z;
+    for (let dy = -1; dy <= 3; dy++) for (let dx = -1; dx <= 3; dx++) {
+      const tx = ux + dx, ty = uy + dy; if (!World.inBounds(tx, ty)) continue;
+      const i = World.idx(tx, ty), r = World.resAt[i];
+      if (r && r.kind === 'tree' && r.x + r.y + 1 + r.ox + r.oy > d0) {
+        const [tsx, tsy] = this.toScreen(r.x + 0.5 + r.ox, r.y + 0.5 + r.oy, 0);
+        if (Math.abs(tsx - u.sx) < 30 * z && headY < tsy - 22 * z && headY > tsy - 100 * z) return true;
+      }
+      const b = World.bld[i];
+      if (b && !b.dead && !b.def.passable && b.tx + b.ty + b.size > d0) {
+        const left = this.toScreen(b.tx, b.ty + b.size, 0)[0], right = this.toScreen(b.tx + b.size, b.ty, 0)[0];
+        const top = this.toScreen(b.tx, b.ty, this.height(b) + 16)[1], bottom = this.toScreen(b.tx + b.size, b.ty + b.size, 0)[1];
+        if (u.sx > left && u.sx < right && headY > top && headY < bottom) return true;
+      }
+    }
+    return false;
   },
   /* A person at the origin, feet on y = 0, facing right, about 32 px tall at zoom 1. `walk` in [-1, 1],
      `swing` in [0, 1] raises the working arm. Team colour on the tunic; villagers wear undyed cloth with a sash. */
-  drawUnitVector(u, p, flip, walk, swing) {
+  drawUnitVector(u, p, flip, walk, swing, tool, working) {
     const g = this.g, col = p.color, age = p.age, cls = u.def.cls;
+    tool = tool || 'axe'; const bend = working && (tool === 'hoe' || tool === 'basket') ? 1 : 0; // stooping over the field or bush
     const skin = ['#e0b898', '#cfa07a', '#a8744c', '#7a5236'][u.id % 4], hair = ['#3a2a1a', '#6a4a2a', '#c9a060', '#1a1a1a'][(u.id >> 2) % 4];
     this.castShadow(0, 0, cls === 'cavalry' ? 26 : cls === 'siege' ? 26 : 12, cls === 'cavalry' ? 5 : 3);
     g.save(); g.scale(flip, 1); g.lineCap = 'round'; g.lineJoin = 'round';
@@ -740,6 +775,7 @@ const Renderer = {
     if (cls === 'infantry' || cls === 'cavalry') { this.poly([[-5.5, by - 24.5], [5.5, by - 24.5], [4.5, by - 19], [-4.5, by - 19]], armour); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-5, by - 24, 3, 2); }
     if (cls === 'archer') { g.strokeStyle = '#5a3f22'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-4, by - 24); g.lineTo(4, by - 14); g.stroke(); }
     // neck and head with hair, eye and a hint of a nose
+    if (bend) g.translate(2.5, 1.5);
     g.fillStyle = skin; g.fillRect(-1.2, by - 27, 2.6, 3.5);
     this.ell(0.4, by - 29.5, 3.6, 3.9, skin);
     g.fillStyle = hair; g.beginPath(); g.arc(0.2, by - 30.2, 3.7, Math.PI * 1.05, Math.PI * 2.05); g.fill(); g.fillRect(-3.4, by - 31, 2, 3.5);
@@ -748,12 +784,28 @@ const Renderer = {
     if (cls === 'villager') { g.fillStyle = '#a8894a'; g.beginPath(); g.ellipse(0.4, by - 31.5, 6.2, 1.9, 0, 0, 7); g.fill(); this.ell(0.4, by - 32.6, 3.6, 2.2, '#b89a58'); }
     else if (cls === 'archer') { this.poly([[-4, by - 30], [0.5, by - 37], [5, by - 30]], age >= 2 ? '#7f858c' : '#4d6a32'); g.fillStyle = '#c9a23a'; g.fillRect(3.5, by - 33, 1, 3); }
     else { g.fillStyle = armour; g.beginPath(); g.arc(0.4, by - 30.5, 4.2, Math.PI, 0); g.fill(); g.fillRect(-3.8, by - 30.5, 8.4, 2); if (age >= 2) g.fillRect(-0.5, by - 30, 1.2, 4); if (age >= 3) { g.fillStyle = col.light; g.fillRect(-0.4, by - 38, 1.4, 7); } if (age >= 1) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(-3, by - 33, 2.5, 1.2); } }
+    if (bend) g.translate(-2.5, -1.5);
     // front arm and what it holds
-    const hx = 6.5 + swing * 3, hy = by - 15 - swing * 8;
-    g.strokeStyle = skin; g.lineWidth = 2.4; g.beginPath(); g.moveTo(4, by - 21.5); g.lineTo(6.5 + swing, by - 18 - swing * 3); g.lineTo(hx, hy); g.stroke();
+    const hx = 6.5 + swing * 3 + bend * 3, hy = by - 15 - swing * 8 + bend * 5;
+    g.strokeStyle = skin; g.lineWidth = 2.4; g.beginPath(); g.moveTo(4, by - 21.5); g.lineTo(6.5 + swing, by - 18 - swing * 3 + bend * 2); g.lineTo(hx, hy); g.stroke();
     if (u.type === 'villager') {
       if (u.carry.amt > 0) { const c = RESOURCE_INFO[u.carry.kind].color; g.fillStyle = c; g.beginPath(); g.roundRect(-9.5, by - 25, 6, 7.5, 1.5); g.fill(); g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-9.5, by - 21, 6, 1); }
-      g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(hx, hy + 4); g.lineTo(hx + 2, hy - 10); g.stroke(); this.poly([[hx + 1, hy - 11], [hx + 6, hy - 12], [hx + 6, hy - 7.5], [hx + 2, hy - 8]], '#9aa0a8');
+      // tool angle: raised behind the shoulder at the top of the swing, driven forward and down on the strike
+      const a = 1.9 - (swing + 0.3) * 1.75, L = tool === 'hoe' ? 17 : tool === 'hammer' ? 10 : 14;
+      const tx = hx + Math.sin(a) * L, ty = hy - Math.cos(a) * L, px = Math.cos(a), py = Math.sin(a); // tip and a perpendicular
+      if (tool === 'basket') {
+        g.strokeStyle = skin; g.lineWidth = 2.4; g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + 4, hy + 2 - (working ? (swing > 0.5 ? 6 : 0) : 0)); g.stroke();
+        this.poly([[-9, by - 14], [-3, by - 14], [-4, by - 7], [-8, by - 7]], '#a8894a'); g.strokeStyle = '#7a5a2a'; g.lineWidth = 1; g.beginPath(); g.moveTo(-8.5, by - 12); g.lineTo(-3.5, by - 12); g.moveTo(-8, by - 10); g.lineTo(-4, by - 10); g.stroke();
+      } else if (tool === 'rod') {
+        g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(hx - 3, hy + 3); g.lineTo(hx + 20, hy - 14); g.stroke();
+        g.strokeStyle = 'rgba(240,240,255,0.9)'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(hx + 20, hy - 14); g.quadraticCurveTo(hx + 22, hy - 4, hx + 21, by + 1); g.stroke();
+      } else {
+        g.strokeStyle = tool === 'pick' ? '#5a4128' : '#6a4a2a'; g.lineWidth = 1.9; g.beginPath(); g.moveTo(hx - Math.sin(a) * 4, hy + Math.cos(a) * 4); g.lineTo(tx, ty); g.stroke();
+        if (tool === 'axe') this.poly([[tx, ty], [tx + px * 5.5 + Math.sin(a) * 1.5, ty + py * 5.5 - Math.cos(a) * 1.5], [tx + px * 5 - Math.sin(a) * 3.5, ty + py * 5 + Math.cos(a) * 3.5], [tx - Math.sin(a) * 3, ty + Math.cos(a) * 3]], '#9aa0a8');
+        else if (tool === 'pick') { this.poly([[tx - px * 7, ty - py * 7], [tx + Math.sin(a) * 2, ty - Math.cos(a) * 2], [tx + px * 7, ty + py * 7], [tx - Math.sin(a) * 2, ty + Math.cos(a) * 2]], '#8a8f96'); }
+        else if (tool === 'hammer') { this.poly([[tx - px * 4 + Math.sin(a) * 2.5, ty - py * 4 - Math.cos(a) * 2.5], [tx + px * 4 + Math.sin(a) * 2.5, ty + py * 4 - Math.cos(a) * 2.5], [tx + px * 4 - Math.sin(a) * 2.5, ty + py * 4 + Math.cos(a) * 2.5], [tx - px * 4 - Math.sin(a) * 2.5, ty - py * 4 + Math.cos(a) * 2.5]], '#6a6a70'); }
+        else if (tool === 'hoe') { this.poly([[tx, ty], [tx + px * 6, ty + py * 6], [tx + px * 6 + Math.sin(a) * 2.5, ty + py * 6 - Math.cos(a) * 2.5], [tx + Math.sin(a) * 2.5, ty - Math.cos(a) * 2.5]], '#8a8f96'); }
+      }
     } else if (u.type === 'spearman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 1, by - 2); g.lineTo(hx + 3 + swing * 5, by - 36 - swing * 2); g.stroke(); this.poly([[hx + 1.5 + swing * 5, by - 35 - swing * 2], [hx + 3 + swing * 5, by - 42 - swing * 2], [hx + 4.5 + swing * 5, by - 35 - swing * 2]], '#c0c6ce'); this.shield(-7.5, by - 15, 4.5, 5.5, col, age); }
     else if (u.type === 'swordsman' || u.type === 'knight') { g.strokeStyle = '#d0d4dc'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + 7 + swing * 4, hy - 13 - swing * 2); g.stroke(); g.strokeStyle = '#5a4128'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(hx - 1.5, hy - 1); g.lineTo(hx + 2.5, hy + 1); g.stroke(); this.shield(-7.5, by - 15, 5, 6.5, col, age); }
     else if (u.type === 'horseman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 2, by - 4); g.lineTo(hx + 6 + swing * 5, by - 34); g.stroke(); this.poly([[hx + 4.5 + swing * 5, by - 33], [hx + 6 + swing * 5, by - 40], [hx + 7.5 + swing * 5, by - 33]], '#c0c6ce'); }
@@ -827,6 +879,11 @@ const Renderer = {
       this.at(e.x, e.y, 0); const t = e.t / e.dur; g.globalAlpha = Math.min(1, (1 - t) * 2.5); const s = e.size * 20;
       this.poly([[-s, 0], [-s * 0.3, -s * 0.35], [s * 0.4, -s * 0.2], [s, 0], [s * 0.3, s * 0.4], [-s * 0.5, s * 0.4]], '#5a5550'); this.poly([[-s * 0.6, -s * 0.1], [-s * 0.2, -s * 0.5], [s * 0.2, -s * 0.3], [0, s * 0.05]], '#7a736a'); this.poly([[s * 0.2, -s * 0.1], [s * 0.5, -s * 0.4], [s * 0.7, -s * 0.05]], '#6a635a');
       if (t < 0.15) for (let k = 0; k < 4; k++) this.ell(k * 8 - 12, -10 - t * 120, 10 + t * 30, 6 + t * 20, `rgba(160,150,140,${0.5 * (1 - t / 0.15)})`);
+      g.globalAlpha = 1;
+    } else if (e.kind === 'chips') {
+      this.at(e.x, e.y, 0); const t = e.t / e.dur; g.fillStyle = e.color; g.globalAlpha = 1 - t * t;
+      if (e.splash) { g.strokeStyle = e.color; g.lineWidth = 1.2; g.beginPath(); g.ellipse(0, 0, 4 + t * 12, 2 + t * 6, 0, 0, 7); g.stroke(); for (let k = 0; k < 4; k++) { const a = e.seed + k * 1.6; g.fillRect(Math.cos(a) * 5 * (1 + t), -6 - Math.sin(t * Math.PI) * 10 + k, 1.5, 3); } }
+      else for (let k = 0; k < 6; k++) { const a = e.seed + k * 1.05, vx = Math.cos(a) * (6 + (k % 3) * 4), vz = 10 + (k % 2) * 8; const x = vx * t, z = vz * t - 24 * t * t; g.fillRect(x - 1, -14 - z, e.spark && k % 2 ? 1.2 : 2.2, e.spark && k % 2 ? 1.2 : 1.6); }
       g.globalAlpha = 1;
     } else if (e.kind === 'text') {
       const [sx, sy] = this.toScreen(e.x, e.y, 30); const t = e.t / e.dur; g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); g.globalAlpha = 1 - t; g.fillStyle = e.color || '#e8c46a'; g.font = `bold ${13 * this.cam.zoom}px Palatino, Georgia, serif`; g.textAlign = 'center'; g.fillText(e.text, sx, sy - t * 30); g.globalAlpha = 1;
@@ -909,7 +966,7 @@ const Renderer = {
     const p = Game.players[owner] || Game.players[0];
     if (kind === 'unit') {
       const def = UNITS[type]; this.cam = { x: 0, y: 0, zoom: def.cls === 'siege' ? 1.1 : 1.15 }; this.W = size; this.H = size * 1.55;
-      const fake = { id: 1, type, def, owner, x: 0, y: 0, face: 0.6, moving: false, anim: 0, swing: 0, carry: { amt: 0, kind: null }, hp: 1, maxHp: 1 };
+      const fake = { id: 1, type, def, owner, x: 0, y: 0, face: 0.6, moving: false, anim: 0, swing: 0, order: null, carry: { amt: 0, kind: null }, hp: 1, maxHp: 1 };
       this.drawUnit(fake);
     } else {
       const def = BUILDINGS[type]; const s = def.size; const z = size / (s * 64 + 30) * 1.15;

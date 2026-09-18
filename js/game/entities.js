@@ -285,6 +285,8 @@ const Sim = {
       let rate = GATHER_RATE[rk(r)] * (1 + p.mods.gather[kind]);
       if (rk(r) === 'farm') rate *= 1 + p.mods.farmYield;
       u.anim += dt * 4; u.swing = 0.2;
+      o.fxT = (o.fxT || 0) + dt;
+      if (o.fxT > 0.78) { o.fxT = 0; const kind = rk(r); if (kind !== 'berry') Game.effects.push({ kind: 'chips', x: u.x + Math.cos(u.face) * 0.45, y: u.y + Math.sin(u.face) * 0.45, t: 0, dur: 0.55, seed: Math.random() * 9, color: { tree: '#d4b078', stone: '#c8ccd4', gold: '#f0d060', farm: '#9fc850', fish: '#e4f4ff' }[kind] || '#d4b078', splash: kind === 'fish' }); }
       const take = Math.min(rate * dt, u.carryCap - u.carry.amt, r.amount);
       if (u.carry.kind !== kind) { u.carry.kind = kind; u.carry.amt = 0; }
       u.carry.amt += take; r.amount -= take;
@@ -340,6 +342,8 @@ const Sim = {
       return;
     }
     u.path = null; u.moving = false; u.face = Math.atan2(b.y - u.y, b.x - u.x); u.anim += dt * 5; u.swing = 0.2;
+    o.fxT = (o.fxT || 0) + dt;
+    if (o.fxT > 0.62) { o.fxT = 0; Game.effects.push({ kind: 'chips', x: u.x + Math.cos(u.face) * 0.5, y: u.y + Math.sin(u.face) * 0.5, t: 0, dur: 0.45, seed: Math.random() * 9, color: '#e8d8b0', spark: true }); }
     b.builders++;
     const n = Math.max(1, b.buildersLast);
     const share = (1 + 0.6 * (n - 1)) / n; // diminishing returns for crews

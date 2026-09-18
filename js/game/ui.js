@@ -33,6 +33,9 @@ const UI = {
     this.els.minimap.addEventListener('touchmove', (e) => { e.preventDefault(); this.miniClick(e.touches[0], true); }, { passive: false });
     this.els.minimap.addEventListener('contextmenu', (e) => e.preventDefault());
     this.buildSetup();
+    const coarse = () => document.body.classList.toggle('coarse', window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 560);
+    coarse(); window.addEventListener('resize', coarse);
+    document.addEventListener('touchstart', () => this.hideTip(), { passive: true });
     try { if (localStorage.getItem('doe-sound') === '0') Sfx.enabled = false; } catch (e) {}
     this.syncSound();
     this.showScreen('title');
@@ -142,7 +145,8 @@ const UI = {
     const el = U.el('div', 'msg ' + (kind || 'info'), text);
     if (x != null) { el.classList.add('link'); el.onclick = () => Renderer.centerOn(x, y); }
     this.els.log.appendChild(el); this.log.push({ el, t: performance.now() });
-    while (this.log.length > 6) { this.log[0].el.remove(); this.log.shift(); }
+    const maxMsgs = window.innerWidth < 560 ? 3 : 6;
+    while (this.log.length > maxMsgs) { this.log[0].el.remove(); this.log.shift(); }
   },
 
   /* ---- selection panel ---- */
@@ -160,6 +164,7 @@ const UI = {
       const own = U.el('div', 'sel-owner', p.name); own.style.color = p.color.light; info.appendChild(own);
       const bar = U.el('div', 'hpbar'); const fill = U.el('div', 'fill'); const f = s.hp / s.maxHp; fill.style.width = (f * 100) + '%'; fill.style.background = f > 0.5 ? '#6fbf6a' : f > 0.25 ? '#e0b040' : '#d8484a'; bar.appendChild(fill); bar.appendChild(U.el('span', null, `${Math.ceil(s.hp)} / ${s.maxHp}`)); info.appendChild(bar);
       head.appendChild(info); el.appendChild(head);
+      head.onclick = () => el.classList.toggle('expanded'); head.title = 'Tap for details';
       const stats = U.el('div', 'sel-stats');
       if (s.kind === 'unit') {
         stats.appendChild(this.stat('Attack', s.atk + (s.def.bonus ? ' ★' : ''), s.def.bonus ? 'Bonus vs ' + Object.keys(s.def.bonus).join(', ') : ''));
@@ -279,6 +284,7 @@ const UI = {
     Sfx.play('ui'); c.onClick(); this.cmdDirty = true; return true;
   },
   showTip(btn, c) {
+    if (document.body.classList.contains('coarse')) return;
     const t = this.els.tooltip; t.innerHTML = '';
     t.appendChild(U.el('div', 'tip-name', c.label + (c.key ? `  [${c.key.toUpperCase()}]` : '')));
     if (c.cost) { const row = U.el('div', 'tip-cost'); for (const k in c.cost) { const s = U.el('span', 'cost' + ((Game.players[Game.human].res[k] || 0) < c.cost[k] ? ' short' : '')); s.appendChild(this.resIcon(k, 14)); s.appendChild(document.createTextNode(c.cost[k])); row.appendChild(s); } t.appendChild(row); }
