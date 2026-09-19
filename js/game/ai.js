@@ -57,7 +57,7 @@ const AI = {
     // Villager production
     if (th && vill.length < D.villagers && th.queue.length < 2 && p.pop() < p.popCap()) Sim.enqueue(th, { kind: 'unit', id: 'villager' });
     // Rebuild a town hall if it is lost
-    if (!th && p.age >= 2 && vill.length && p.canAfford(BUILDINGS.townhall.cost) && !p.buildings('townhall').length) AI.placeNear(p, 'townhall', S.home || { x: vill[0].x, y: vill[0].y }, vill);
+    if (!th && vill.length && p.canAfford(BUILDINGS.townhall.cost) && !p.buildings('townhall').length) AI.placeNear(p, 'townhall', S.home || { x: vill[0].x, y: vill[0].y }, vill);
     // Desired split by age
     const split = p.age === 0 ? { food: 0.5, wood: 0.42, gold: 0.08, stone: 0 } : p.age === 1 ? { food: 0.42, wood: 0.3, gold: 0.2, stone: 0.08 } : { food: 0.38, wood: 0.26, gold: 0.26, stone: 0.1 };
     // Shift towards what we are short of

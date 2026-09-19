@@ -15,12 +15,19 @@ const World = {
   idx(x, y) { return y * this.w + x; },
   isLand(x, y) { return this.inBounds(x, y) && this.tiles[this.idx(x, y)] !== 1; },
   /* Can a unit stand here? Buildings block unless they are flat (farms). Resources block. */
-  passable(x, y) {
+  passable(x, y, owner) {
     if (!this.inBounds(x, y)) return false;
     const i = this.idx(x, y);
     if (this.tiles[i] === 1 || this.resAt[i]) return false;
     const b = this.bld[i];
-    return !b || b.def.passable;
+    if (!b || b.def.passable) return true;
+    return !!(b.def.gate && owner != null && b.owner === owner); // gates open for their owner
+  },
+  /* Neighbouring wall pieces of the same owner: bit 1 east (+x), 2 south (+y), 4 west, 8 north. */
+  wallMask(b) {
+    let m = 0; const dirs = [[1, 0, 1], [0, 1, 2], [-1, 0, 4], [0, -1, 8]];
+    for (const [dx, dy, bit] of dirs) { const x = b.tx + dx, y = b.ty + dy; if (!this.inBounds(x, y)) continue; const n = this.bld[this.idx(x, y)]; if (n && !n.dead && n.def.wall && n.owner === b.owner) m |= bit; }
+    return m;
   },
   /* Empty land: nothing at all on it. Used for placing buildings and resources. */
   open(x, y) {

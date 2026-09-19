@@ -16,8 +16,13 @@ phones and tablets (tap, drag, pinch).
   red tile → slate and gold) and unlocks new buildings, units and technologies.
 - **Economy** — berries, shore fish, forests, stone outcrops and gold veins, plus farms that never run out. Drop-off camps,
   housing, population caps, rally points, idle-villager cycling.
-- **15 buildings** — Town Hall, House, Farm, Granary, Lumber Camp, Mining Camp, Barracks, Archery Range, Stables,
-  Blacksmith, Watchtower, Hall of Scholars, Keep, Siege Workshop and the Monument (an alternative victory).
+- **19 buildings** — Town Hall, House, Farm, Granary, Lumber Camp, Mining Camp, Barracks, Archery Range, Stables,
+  Blacksmith, Watchtower, Hall of Scholars, Keep, Siege Workshop, the Monument (an alternative victory), and
+  palisade and stone walls with gates that only your own people can pass.
+- **Garrisons** — villagers and foot soldiers shelter inside the Town Hall, towers and keeps, which then shoot more
+  arrows. The Town Bell pulls every villager in and sends them back to work afterwards.
+- **Saving** — autosave every minute, Continue from the title screen, and text export/import to move a match between
+  devices.
 - **8 units** — Villager, Spearman, Swordsman, Archer, Crossbowman, Horseman, Knight and Catapult, with a
   rock-paper-scissors of bonuses (spears beat horses, horses beat archers, archers beat infantry, siege beats walls).
 - **19 technologies** — weapon, armour and range lines at the Blacksmith; wheelbarrow, axes, picks, ploughs and
@@ -38,7 +43,8 @@ phones and tablets (tap, drag, pinch).
 | Select | Left click, drag a box, Shift to add, double-click for all of a type | Tap |
 | Command | Right click: move, gather, build, repair or attack by target | Tap ground or target with units selected |
 | Camera | Arrow keys, middle-drag or Space-drag, wheel to zoom, click the minimap | Drag to pan, pinch to zoom |
-| Hotkeys | Letters on the command buttons (Q W E R T Y / A S D F G / Z X C V B); **H** Town Hall, **.** idle villager, **Enter** last event, **Ctrl+1–9** / **1–9** groups, **Delete**, **Esc** | — |
+| Hotkeys | Letters on the command buttons (Q W E R T Y / A S D F G / Z X C V B); **H** Town Hall, **.** idle villager, **,** whole army, **Enter** last event, **Ctrl+1–9** / **1–9** groups, **Delete**, **Esc** | Hold a finger still to start a selection box |
+| Walls | Pick a wall, then click and drag a run; click a wall piece with a gate to replace it | Tap one end, then the other |
 
 ## Project layout
 

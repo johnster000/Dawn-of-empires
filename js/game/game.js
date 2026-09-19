@@ -4,7 +4,7 @@ const Game = {
   defaults: { mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
   settings: null, players: [], human: 0, units: [], buildings: [], effects: [], selection: [], groups: {},
   running: false, paused: false, over: false, time: 0, acc: 0, lastTs: 0, seed: 0,
-  placing: null, buildMenu: false, mode: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,
+  placing: null, buildMenu: false, wallStart: null, mode: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,
 
   init() {
     for (const k in TERRAINS) TERRAINS[k].id = k;
@@ -18,10 +18,11 @@ const Game = {
   newGame(settings) {
     this.settings = Object.assign({}, this.defaults, settings);
     const s = this.settings;
-    this.seed = s.seedText ? RNG.seedFrom(s.seedText) : (Math.random() * 4294967295) >>> 0;
+    this.seed = s.forceSeed != null ? s.forceSeed : s.seedText ? RNG.seedFrom(s.seedText) : (Math.random() * 4294967295) >>> 0;
+    delete s.forceSeed;
     s.seed = this.seed;
     this.units = []; this.buildings = []; this.effects = []; this.selection = []; this.groups = {}; this.players = [];
-    this.time = 0; this.acc = 0; this.over = false; this.paused = false; this.placing = null; this.mode = null; this.buildMenu = false; this.idleIdx = 0; this.alertT = -99;
+    this.time = 0; this.acc = 0; this.saveT = 0; this.over = false; this.paused = false; this.placing = null; this.mode = null; this.buildMenu = false; this.idleIdx = 0; this.alertT = -99;
     Ent.nextId = 1; UI.iconCache.clear(); UI.log.forEach((m) => m.el.remove()); UI.log = []; UI.lastRes = {};
     const startRes = { low: { food: 100, wood: 100, stone: 50, gold: 50 }, normal: { food: 200, wood: 200, stone: 100, gold: 100 }, high: { food: 600, wood: 600, stone: 300, gold: 300 }, huge: { food: 2000, wood: 2000, stone: 1000, gold: 1000 } }[s.resources];
     const n = 1 + U.clamp(s.enemies, 1, 5);
@@ -54,7 +55,8 @@ const Game = {
     UI.message(`${AGES[s.startAge].name}. ${n - 1} rival${n > 2 ? 's' : ''} somewhere in the ${TERRAINS[s.terrain].name.toLowerCase()}. Build, grow, endure.`, 'info');
     Sfx.init();
   },
-  quit() { this.running = false; this.paused = false; this.selection = []; UI.showScreen('title'); },
+  quit() { if (this.running && !this.over) this.save(true); this.running = false; this.paused = false; this.selection = []; UI.showScreen('title'); UI.syncContinue(); },
+  save(quiet) { if (!this.running || this.over) return false; const ok = Save.write(Save.serialize()); if (!quiet) UI.toast(ok ? 'Game saved' : 'Could not save (storage blocked)'); this.saveT = 0; return ok; },
 
   /* ---- loop ---- */
   frame(ts) {
@@ -75,6 +77,7 @@ const Game = {
   tick(dt) {
     this.time += dt;
     for (const u of this.units) Sim.tickUnit(u, dt);
+    Sim.separate();
     for (const b of this.buildings) Sim.tickBuilding(b, dt);
     // effects: projectiles land, decals fade
     for (const e of this.effects) {
@@ -87,6 +90,7 @@ const Game = {
     for (const p of this.players) if (p.isAI && p.alive) AI.tick(p, dt);
     this.fogT -= dt; if (this.fogT <= 0) { this.fogT = 0.3; World.updateFog(this.human, this.settings.reveal); Renderer.fogDirty = true; }
     this.winT -= dt; if (this.winT <= 0) { this.winT = 1; this.checkVictory(); }
+    this.saveT = (this.saveT || 0) + dt; if (this.saveT >= 60 && !this.over) this.save(true);
   },
 
   /* ---- selection ---- */
@@ -118,6 +122,11 @@ const Game = {
     this.select(list);
   },
   focus(e) { Renderer.centerOn(e.x, e.y); },
+  selectArmy() {
+    const army = this.players[this.human].units().filter((u) => u.type !== 'villager');
+    if (!army.length) { UI.toast('No soldiers'); return; }
+    this.select(army); this.focus(army[0]);
+  },
   nextIdleVillager() {
     const idle = this.players[this.human].units('villager').filter((u) => !u.order);
     if (!idle.length) { UI.toast('No idle villagers'); return; }
@@ -161,12 +170,25 @@ const Game = {
     const tx = Math.floor(t.x), ty = Math.floor(t.y);
     const vill = units.filter((u) => u.type === 'villager'), mil = units.filter((u) => u.type !== 'villager');
     const target = t.unit && t.unit.owner !== this.human ? t.unit : t.bld && t.bld.owner !== this.human ? t.bld : null;
+    if (mode === 'repair' && !(t.bld && t.bld.owner === this.human)) { UI.toast('Pick one of your buildings to repair'); return; }
     if (mode === 'attackmove') { this.spread(mil, tx, ty, 'attackmove'); this.spread(vill, tx, ty, 'move'); this.ping(t.x, t.y, '#d8484a'); Sfx.play('ack'); return; }
     if (mode === 'move' || (t.unit && t.unit.owner === this.human && !target)) { this.spread(units, tx, ty, 'move'); this.ping(t.x, t.y); Sfx.play('ack'); return; }
     if (target) { for (const u of units) Sim.setOrder(u, { type: 'attack', target }); this.ping(target.x, target.y, '#d8484a'); Sfx.play('ack'); return; }
     if (t.bld && t.bld.owner === this.human) {
       const b = t.bld;
-      if (vill.length && (!b.built || b.hp < b.maxHp)) { for (const u of vill) Sim.setOrder(u, { type: 'build', bld: b }); this.spread(mil, tx, ty, 'move'); Sfx.play('ack'); this.ping(b.x, b.y); return; }
+      if (mode === 'repair') { if (vill.length && b.built) { for (const u of vill) Sim.setOrder(u, { type: 'build', bld: b }); Sfx.play('ack'); this.ping(b.x, b.y); } else UI.toast('Nothing to repair there'); return; }
+      if (vill.length && !b.built) { for (const u of vill) Sim.setOrder(u, { type: 'build', bld: b }); this.spread(mil, tx, ty, 'move'); Sfx.play('ack'); this.ping(b.x, b.y); return; }
+      if (b.built && b.def.garrison) {
+        const takers = units.filter((u) => Sim.canGarrison(u, b));
+        if (takers.length) {
+          const room = b.def.garrison - b.garrison.length;
+          if (room <= 0) { UI.toast(b.def.name + ' is full'); Sfx.play('error'); return; }
+          takers.slice(0, room).forEach((u) => Sim.setOrder(u, { type: 'garrison', bld: b, prev: u.order && (u.order.type === 'gather' || u.order.type === 'build') ? u.order : null }));
+          if (takers.length > room) UI.toast(`Room for ${room} inside`);
+          this.spread(units.filter((u) => !takers.slice(0, room).includes(u)), tx, ty, 'move'); Sfx.play('ack'); this.ping(b.x, b.y); return;
+        }
+      }
+      if (vill.length && b.built && b.hp < b.maxHp) { for (const u of vill) Sim.setOrder(u, { type: 'build', bld: b }); this.spread(mil, tx, ty, 'move'); Sfx.play('ack'); this.ping(b.x, b.y); return; }
       if (vill.length && b.def.farm && b.built) { const free = !b.worker || b.worker.dead; if (free) { Sim.setOrder(vill[0], { type: 'gather', res: b }); for (const u of vill.slice(1)) { const f = Sim.freeFarm(u, 10); if (f && f !== b) Sim.setOrder(u, { type: 'gather', res: f }); else Sim.setOrder(u, { type: 'move', x: tx, y: ty }); } } else UI.toast('That farm already has a farmer'); this.spread(mil, tx, ty, 'move'); Sfx.play('ack'); return; }
       if (vill.length && b.def.dropoff && vill.some((u) => u.carry.amt > 0)) { for (const u of vill) if (u.carry.amt > 0) Sim.setOrder(u, { type: 'gather', res: u.order && u.order.res || null, dropoff: b, phase: 'return' }); this.spread(mil, tx, ty, 'move'); Sfx.play('ack'); return; }
       this.spread(units, tx, ty, 'move'); Sfx.play('ack'); this.ping(t.x, t.y); return;
@@ -184,7 +206,7 @@ const Game = {
     if (!units.length) return;
     const taken = new Set(); const tiles = [];
     const r = Math.ceil(Math.sqrt(units.length)) + 2;
-    for (let d = 0; d <= r && tiles.length < units.length; d++) for (let x = tx - d; x <= tx + d && tiles.length < units.length; x++) for (let y = ty - d; y <= ty + d; y++) { if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== d) continue; const key = x + ',' + y; if (taken.has(key) || !World.passable(x, y)) continue; taken.add(key); tiles.push([x, y]); if (tiles.length >= units.length) break; }
+    for (let d = 0; d <= r && tiles.length < units.length; d++) for (let x = tx - d; x <= tx + d && tiles.length < units.length; x++) for (let y = ty - d; y <= ty + d; y++) { if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== d) continue; const key = x + ',' + y; if (taken.has(key) || !World.passable(x, y, this.human)) continue; taken.add(key); tiles.push([x, y]); if (tiles.length >= units.length) break; }
     if (!tiles.length) { UI.toast("Can't go there"); Sfx.play('error'); return; }
     const sorted = units.slice().sort((a, b) => U.dist2(a.x, a.y, tx, ty) - U.dist2(b.x, b.y, tx, ty));
     sorted.forEach((u, i) => { const t = tiles[Math.min(i, tiles.length - 1)]; Sim.setOrder(u, { type, x: t[0], y: t[1] }); });
@@ -201,16 +223,42 @@ const Game = {
   startPlacing(type) {
     const def = BUILDINGS[type], p = this.players[this.human];
     if (def.age > p.age) { UI.toast('Requires the ' + AGES[def.age].name); return; }
-    this.placing = { type, def, tx: -99, ty: -99, ok: false }; Renderer.ghost = this.placing; this.mode = null;
+    this.placing = { type, def, tx: -99, ty: -99, ok: false, wall: !!(def.wall && !def.gate), line: null }; Renderer.ghost = this.placing; this.mode = null; this.wallStart = null;
     this.updateGhost(Input.mouse.x, Input.mouse.y); UI.cmdDirty = true;
+  },
+  /* Can this go here? Gates may replace one of your own plain wall pieces. */
+  siteOk(def, tx, ty) {
+    let ok = World.canPlace(def, tx, ty);
+    if (!ok && def.gate && World.inBounds(tx, ty)) { const b = World.bld[World.idx(tx, ty)]; if (b && !b.dead && b.owner === this.human && b.def.wall && !b.def.gate && World.tiles[World.idx(tx, ty)] !== 1 && !World.resAt[World.idx(tx, ty)]) ok = true; }
+    if (ok && !this.settings.reveal) for (let x = tx; x < tx + def.size; x++) for (let y = ty; y < ty + def.size; y++) if (!World.explored[World.idx(x, y)]) ok = false;
+    return ok;
   },
   updateGhost(sx, sy) {
     const g = this.placing; if (!g) return;
     const [wx, wy] = Renderer.toWorld(sx, sy);
     g.tx = Math.round(wx - g.def.size / 2); g.ty = Math.round(wy - g.def.size / 2);
-    let ok = World.canPlace(g.def, g.tx, g.ty);
-    if (ok && !this.settings.reveal) for (let x = g.tx; x < g.tx + g.def.size; x++) for (let y = g.ty; y < g.ty + g.def.size; y++) if (!World.explored[World.idx(x, y)]) ok = false;
-    g.ok = ok;
+    g.ok = this.siteOk(g.def, g.tx, g.ty);
+    if (g.wall && this.wallStart) g.line = this.wallLine(this.wallStart[0], this.wallStart[1], g.tx, g.ty).map(([x, y]) => [x, y, this.siteOk(g.def, x, y)]);
+    else g.line = null;
+  },
+  /* Tiles along a straight run between two tiles (Bresenham). */
+  wallLine(x0, y0, x1, y1) {
+    const out = []; let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy, x = x0, y = y0, guard = 0;
+    for (;;) { out.push([x, y]); if ((x === x1 && y === y1) || guard++ > 400) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x += sx; } if (e2 <= dx) { err += dx; y += sy; } }
+    return out;
+  },
+  beginWall(sx, sy) { this.updateGhost(sx, sy); const g = this.placing; if (!g || !g.wall) return; this.wallStart = [g.tx, g.ty]; this.updateGhost(sx, sy); UI.hint('Drag to the other end, then release'); },
+  placeWall(sx, sy) {
+    const g = this.placing, p = this.players[this.human]; if (!g || !g.wall || !this.wallStart) return;
+    this.updateGhost(sx, sy);
+    const vill = this.selection.filter((s) => s.kind === 'unit' && s.type === 'villager' && !s.dead);
+    const placed = [];
+    for (const [x, y, ok] of g.line || []) { if (!ok) continue; if (!p.canAfford(g.def.cost)) { UI.toast('Out of ' + p.missing(g.def.cost).join(', ')); break; } const b = this.placeBuilding(p, g.type, x, y); if (b) placed.push(b); }
+    this.wallStart = null; g.line = null;
+    if (!placed.length) { UI.toast('Cannot build there'); Sfx.play('error'); return; }
+    // builders split along the run and chain from piece to piece
+    vill.forEach((u, i) => Sim.setOrder(u, { type: 'build', bld: placed[Math.floor((i / vill.length) * placed.length)] }));
+    Sfx.play('ack'); UI.hint('Click and drag for another run · Right-click or Esc to finish'); UI.cmdDirty = true;
   },
   placeAt(sx, sy, keep) {
     this.updateGhost(sx, sy);
@@ -227,6 +275,7 @@ const Game = {
   },
   placeBuilding(p, type, tx, ty) {
     const def = BUILDINGS[type];
+    if (def.gate && World.inBounds(tx, ty)) { const old = World.bld[World.idx(tx, ty)]; if (old && !old.dead && old.owner === p.id && old.def.wall && !old.def.gate) { old.dead = true; World.setBuilding(old, false); this.buildings = this.buildings.filter((b) => b !== old); if (old.built) p.refund(old.def.cost); } }
     if (!World.canPlace(def, tx, ty, true) || !p.canAfford(def.cost)) return null;
     p.pay(def.cost);
     const b = Ent.building(type, p.id, tx, ty, false); World.setBuilding(b, true); this.buildings.push(b);
@@ -234,7 +283,7 @@ const Game = {
     if (!def.passable) for (const u of this.units) if (!u.dead && u.x >= tx && u.x < tx + def.size && u.y >= ty && u.y < ty + def.size) { const t = U.nearestTile(u.x, u.y, 4, (x, y) => World.passable(x, y)); if (t) { u.x = t[0] + 0.5; u.y = t[1] + 0.5; } }
     return b;
   },
-  cancelPlacing() { this.placing = null; Renderer.ghost = null; UI.cmdDirty = true; },
+  cancelPlacing() { this.placing = null; this.wallStart = null; Renderer.ghost = null; UI.hint(null); UI.cmdDirty = true; },
   updateHover(sx, sy) {
     if (!this.running) return;
     const u = Renderer.pickUnit(sx, sy), b = u ? null : Renderer.pickBuilding(sx, sy), r = u || b ? null : Renderer.pickResource(sx, sy);
@@ -270,6 +319,7 @@ const Game = {
     }
     if (this.selection.includes(t)) UI.selDirty = UI.cmdDirty = true;
   },
+  ringBell() { const th = this.players[this.human].buildings('townhall').find((b) => b.built) || this.players[this.human].buildings().find((b) => b.built && b.def.garrison); if (!th) { UI.toast('No shelter to run to'); return; } Sim.ringBell(th); UI.cmdDirty = true; },
   onBuilt(b) {
     if (b.owner === this.human) { UI.message(`${b.def.name} complete.`, 'good', b.x, b.y); UI.iconCache.clear(); }
     if (b.def.monument) { UI.message(`${this.players[b.owner].name} has completed a Monument! Destroy it within ${U.time(this.settings.monumentTime)}.`, b.owner === this.human ? 'good' : 'attack', b.x, b.y); if (b.owner !== this.human) Sfx.play('alert'); }
@@ -296,7 +346,7 @@ const Game = {
     if (this.players.every((p) => p.id === this.human || !p.alive)) this.gameOver(true, 'Every rival has been driven from the land.');
   },
   gameOver(won, reason) {
-    this.over = true; this.paused = true;
+    this.over = true; this.paused = true; Save.clear();
     Sfx.play(won ? 'victory' : 'defeat');
     UI.showEnd(won, reason);
   },

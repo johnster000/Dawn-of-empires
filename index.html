@@ -39,6 +39,7 @@
       <div id="right">
         <canvas id="minimap" width="360" height="360"></canvas>
         <button id="btn-idle" title="Select the next idle villager (.)">Idle villager</button>
+        <button id="btn-army" title="Select every soldier you have (,)">Select army</button>
       </div>
     </div>
     <div id="tooltip" hidden></div>
@@ -53,9 +54,11 @@
       <p class="tagline">Three villagers, a patch of forest and four ages to climb.</p>
     </div>
     <div class="menu">
+      <button id="btn-continue" class="big primary" hidden>Continue</button>
       <button id="btn-new" class="big primary">New Game</button>
       <button id="btn-howto" class="big">How to Play</button>
       <button id="btn-sound" class="big">Sounds on</button>
+      <button id="btn-import" class="big">Import a save</button>
     </div>
     <a class="donate" href="https://buymeacoffee.com/cyclestartstudios" target="_blank" rel="noopener">&#9749; Enjoying it? Buy me a coffee</a>
     <p class="footer">No ads, no purchases, no timers.</p>
@@ -98,6 +101,10 @@
           <p>Right-click a tree, bush or deposit with villagers selected to gather. They carry loads back to the nearest drop-off: the Town Hall, or a Granary, Lumber Camp or Mining Camp built next to the resource. Berries run out, so build <b>Farms</b>; one villager works each farm forever. Every five people need a <b>House</b>.</p>
           <h3>Ages</h3>
           <p>Select the Town Hall and choose <b>Advance</b>. Each age needs two different buildings from the age before it and a stock of food and gold. Buildings change their look as you climb.</p>
+          <h3>Defence</h3>
+          <p>Villagers build <b>walls</b> from the Defences menu: pick a wall, then click and drag a run of it. A <b>gate</b> lets your own people through and can be dropped onto an existing wall piece. Villagers and foot soldiers can <b>garrison</b> inside the Town Hall, towers and keeps by right-clicking them; a garrisoned building shoots more arrows. The Town Hall's <b>Town Bell</b> pulls every villager to shelter and sends them back to work when rung again.</p>
+          <h3>Saving</h3>
+          <p>The game saves itself every minute and when you quit; <b>Continue</b> on the title screen picks it up. <b>Export save</b> in the pause menu gives you text to paste into <b>Import a save</b> on another device.</p>
         </section>
         <section>
           <h3>Fighting</h3>
@@ -107,8 +114,8 @@
             <tr><td>Select</td><td>Left click, or drag a box. Shift adds. Double-click selects all of a type on screen.</td></tr>
             <tr><td>Command</td><td>Right click: move, gather, build, repair or attack depending on the target. Right-click with a building selected sets its rally point.</td></tr>
             <tr><td>Camera</td><td>Arrow keys, middle-drag or space-drag, mouse wheel to zoom. Click the minimap to jump.</td></tr>
-            <tr><td>Hotkeys</td><td>The letter on each command button (Q W E R T Y / A S D F G / Z X C V B). <b>H</b> Town Hall · <b>.</b> next idle villager · <b>Enter</b> last event · <b>Ctrl+1–9</b> save a group, <b>1–9</b> recall · <b>Delete</b> remove selected · <b>Esc</b> cancel / menu.</td></tr>
-            <tr><td>Touch</td><td>Tap to select, tap the ground or a target to command, drag to pan, pinch to zoom.</td></tr>
+            <tr><td>Hotkeys</td><td>The letter on each command button (Q W E R T Y / A S D F G / Z X C V B). <b>H</b> Town Hall · <b>.</b> next idle villager · <b>,</b> select the whole army · <b>Enter</b> last event · <b>Ctrl+1–9</b> save a group, <b>1–9</b> recall · <b>Delete</b> remove selected · <b>Esc</b> cancel / menu.</td></tr>
+            <tr><td>Touch</td><td>Tap to select, tap the ground or a target to command, drag to pan, pinch to zoom. Hold a finger still for a moment, then drag, to draw a selection box. Double-tap a unit to select all of its type on screen.</td></tr>
           </table>
         </section>
       </div>
@@ -122,11 +129,27 @@
       <h2>Paused</h2>
       <div class="menu">
         <button id="btn-resume" class="big primary">Resume</button>
+        <button id="btn-save" class="big">Save game</button>
+        <button id="btn-export" class="big">Export save</button>
         <button id="btn-pause-howto" class="big">How to Play</button>
         <button id="btn-pause-sound" class="big">Sounds on</button>
         <button id="btn-pause-speed" class="big">Speed: Normal</button>
         <button id="btn-restart" class="big">Restart with same settings</button>
         <button id="btn-quit" class="big">Quit to title</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- save text modal -->
+  <div id="modal" class="screen" hidden>
+    <div class="panel">
+      <h2 id="modal-title">Export save</h2>
+      <p id="modal-sub" class="blurb"></p>
+      <textarea id="modal-text" rows="8" spellcheck="false"></textarea>
+      <div class="row">
+        <button id="btn-modal-close" class="big">Close</button>
+        <button id="btn-modal-copy" class="big">Copy</button>
+        <button id="btn-modal-import" class="big primary">Import</button>
       </div>
     </div>
   </div>
@@ -155,6 +178,7 @@
 <script src="js/data/units.js"></script>
 <script src="js/data/techs.js"></script>
 <script src="js/engine/audio.js"></script>
+<script src="js/engine/save.js"></script>
 <script src="js/engine/renderer.js"></script>
 <script src="js/engine/input.js"></script>
 <script src="js/game/world.js"></script>

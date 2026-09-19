@@ -1,9 +1,9 @@
 /* Buildings. `size` is the footprint in tiles (square). `time` is villager-seconds to construct.
    `shape` picks a procedural drawing routine in the renderer. */
 const BUILDINGS = {
-  townhall:   { name: 'Town Hall',    size: 3, hp: 1500, armor: 3, cost: { wood: 350, stone: 150 }, time: 150, age: 2, shape: 'hall',
+  townhall:   { name: 'Town Hall',    size: 3, hp: 1500, armor: 3, cost: { wood: 275, stone: 100 }, time: 120, age: 0, shape: 'hall',
                 desc: 'The heart of a settlement. Trains villagers, stores every resource and advances the age.',
-                trains: ['villager'], techs: ['loom'], dropoff: ['food', 'wood', 'stone', 'gold'], pop: 5, sight: 8, ageUp: true },
+                trains: ['villager'], techs: ['loom'], dropoff: ['food', 'wood', 'stone', 'gold'], pop: 5, sight: 8, ageUp: true, garrison: 15, garrisonAttack: { dmg: 5, range: 6, rate: 1.6 } },
   house:      { name: 'House',        size: 2, hp: 250,  armor: 1, cost: { wood: 30 }, time: 25, age: 0, shape: 'house',
                 desc: 'Room for five more people.', pop: 5, sight: 3 },
   farm:       { name: 'Farm',         size: 2, hp: 120,  armor: 0, cost: { wood: 60 }, time: 20, age: 0, shape: 'farm', passable: true,
@@ -23,16 +23,25 @@ const BUILDINGS = {
   blacksmith: { name: 'Blacksmith',   size: 2, hp: 550,  armor: 2, cost: { wood: 120, stone: 40 }, time: 40, age: 1, shape: 'smithy',
                 desc: 'Researches better weapons and armour for every soldier.', techs: ['forging1', 'forging2', 'forging3', 'fletch1', 'fletch2', 'fletch3', 'armor1', 'armor2', 'armor3'], sight: 4 },
   tower:      { name: 'Watchtower',   size: 1, hp: 450,  armor: 3, cost: { wood: 50, stone: 100 }, time: 40, age: 1, shape: 'tower',
-                desc: 'Sees far and shoots arrows at anything hostile in range.', sight: 9, attack: { dmg: 6, range: 6, rate: 1.6, kind: 'arrow' } },
+                desc: 'Sees far and shoots arrows at anything hostile in range. Garrison up to 5 for extra arrows.', sight: 9, attack: { dmg: 6, range: 6, rate: 1.6, kind: 'arrow' }, garrison: 5 },
   library:    { name: 'Hall of Scholars', size: 3, hp: 650, armor: 2, cost: { wood: 200, stone: 100 }, time: 60, age: 2, shape: 'library',
                 desc: 'Researches economic improvements.', techs: ['wheelbarrow', 'handcart', 'axes', 'saw', 'pick', 'shaft', 'crops', 'heavyplow', 'conscription'], sight: 5 },
   keep:       { name: 'Keep',         size: 2, hp: 1400, armor: 4, cost: { wood: 100, stone: 350 }, time: 90, age: 2, shape: 'keep',
-                desc: 'A stout stone fortification with a long reach.', sight: 11, attack: { dmg: 14, range: 8, rate: 2.0, kind: 'arrow' } },
+                desc: 'A stout stone fortification with a long reach. Garrison up to 10.', sight: 11, attack: { dmg: 14, range: 8, rate: 2.0, kind: 'arrow' }, garrison: 10 },
   workshop:   { name: 'Siege Workshop', size: 3, hp: 700, armor: 2, cost: { wood: 200, stone: 100 }, time: 60, age: 3, shape: 'workshop',
                 desc: 'Builds catapults that make short work of buildings.', trains: ['catapult'], sight: 5 },
+  palisade:   { name: 'Palisade Wall', size: 1, hp: 250,  armor: 2, cost: { wood: 4 }, time: 5, age: 0, shape: 'wall', wall: 'wood',
+                desc: 'A line of sharpened logs. Click and drag to lay a run of it.', sight: 3 },
+  palisadegate: { name: 'Palisade Gate', size: 1, hp: 400, armor: 2, cost: { wood: 25 }, time: 12, age: 0, shape: 'gate', wall: 'wood', gate: true,
+                desc: 'A gap in the palisade that only your own people can pass. Can be placed over an existing wall.', sight: 3 },
+  stonewall:  { name: 'Stone Wall',   size: 1, hp: 900,  armor: 6, cost: { stone: 5 }, time: 10, age: 1, shape: 'wall', wall: 'stone',
+                desc: 'Thick masonry. Click and drag to lay a run of it.', sight: 3 },
+  stonegate:  { name: 'Stone Gate',   size: 1, hp: 1400, armor: 6, cost: { stone: 30 }, time: 20, age: 1, shape: 'gate', wall: 'stone', gate: true,
+                desc: 'A fortified gate only your own people can pass. Can be placed over an existing wall.', sight: 3 },
   monument:   { name: 'Monument',     size: 4, hp: 4000, armor: 5, cost: { wood: 600, stone: 1200, gold: 1000 }, time: 400, age: 3, shape: 'monument',
                 desc: 'A wonder of the age. Finish it and hold it for five minutes to win.', sight: 6, monument: true },
 };
 
 /* Order buildings appear in the villager build menu. */
-const BUILD_MENU = ['house', 'farm', 'granary', 'lumbercamp', 'miningcamp', 'barracks', 'range', 'stables', 'blacksmith', 'tower', 'library', 'keep', 'workshop', 'townhall', 'monument'];
+const BUILD_MENU = ['house', 'farm', 'granary', 'lumbercamp', 'miningcamp', 'barracks', 'range', 'stables', 'blacksmith', 'library', 'workshop', 'townhall', 'monument'];
+const DEFENCE_MENU = ['palisade', 'palisadegate', 'stonewall', 'stonegate', 'tower', 'keep'];

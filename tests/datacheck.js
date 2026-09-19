@@ -15,7 +15,7 @@ const src = files.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('
     if (t.requires && !TECHS[t.requires]) problems.push('tech ' + k + ' requires unknown ' + t.requires);
   }
   for (const a of AGES) if (a.advance) for (const b of a.advance.need) if (!BUILDINGS[b]) problems.push('age ' + a.id + ' needs unknown building ' + b);
-  for (const b of BUILD_MENU) if (!BUILDINGS[b]) problems.push('menu has unknown building ' + b);
+  for (const b of BUILD_MENU.concat(DEFENCE_MENU)) if (!BUILDINGS[b]) problems.push('menu has unknown building ' + b);
   console.log(Object.keys(BUILDINGS).length + ' buildings, ' + Object.keys(UNITS).length + ' units, ' + Object.keys(TECHS).length + ' techs, ' + Object.keys(TERRAINS).length + ' terrains');
   if (problems.length) { console.log(problems.join('\\n')); process.exit(1); }
   console.log('data ok');

@@ -20,7 +20,7 @@ class Player {
   pay(cost) { for (const k in cost) this.res[k] -= cost[k]; }
   refund(cost) { for (const k in cost) this.res[k] += cost[k]; }
   popCap() { let c = 0; for (const b of Game.buildings) if (!b.dead && b.built && b.owner === this.id) c += b.def.pop || 0; return Math.min(c, Game.settings.popCap); }
-  pop() { let n = 0; for (const u of Game.units) if (!u.dead && u.owner === this.id) n++; for (const b of Game.buildings) if (!b.dead && b.owner === this.id) for (const q of b.queue) if (q.kind === 'unit') n++; return n; }
+  pop() { let n = 0; for (const u of Game.units) if (!u.dead && u.owner === this.id) n++; for (const b of Game.buildings) if (!b.dead && b.owner === this.id) { n += b.garrison.length; for (const q of b.queue) if (q.kind === 'unit') n++; } return n; }
   hasTech(id) { return this.techs.has(id); }
   applyTech(id) {
     const t = TECHS[id]; if (!t || this.techs.has(id)) return;
@@ -61,7 +61,7 @@ const Ent = {
     const def = BUILDINGS[type];
     const b = { id: Ent.nextId++, kind: 'building', type, def, owner, tx, ty, size: def.size, x: tx + def.size / 2, y: ty + def.size / 2,
       hp: built ? def.hp : 1, maxHp: def.hp, dead: false, built: !!built, progress: built ? 1 : 0, builders: 0, buildersLast: 0,
-      queue: [], qt: 0, rally: null, cd: 0, worker: null, amount: def.farm ? Infinity : 0, kindRes: def.farm ? 'farm' : null, monumentT: 0, ageVisual: 0 };
+      queue: [], qt: 0, rally: null, cd: 0, worker: null, garrison: [], bell: false, amount: def.farm ? Infinity : 0, kindRes: def.farm ? 'farm' : null, monumentT: 0, ageVisual: 0 };
     b.ageVisual = Game.players[owner] ? Game.players[owner].age : 0;
     return b;
   },
@@ -82,6 +82,33 @@ const Sim = {
     u.carryCap = BASE_CARRY + m.carry;
   },
   effectiveRange(u) { return u.range > 0 ? u.range : 0; },
+
+  /* Nobody stands inside anybody else: overlapping units are nudged apart each tick. Units busy at a task hold
+     their ground; walkers and idlers give way. */
+  radius(u) { return u.def.cls === 'cavalry' ? 0.32 : u.def.cls === 'siege' ? 0.38 : 0.24; },
+  fixed(u) { const o = u.order; return !!(o && ((o.type === 'gather' && o.phase === 'gathering') || (o.type === 'build' && !u.moving && !u.path) || (o.type === 'attack' && !u.moving))); },
+  separate() {
+    const buckets = new Map(), W = World.w;
+    for (const u of Game.units) { if (u.dead) continue; const k = Math.floor(u.y) * W + Math.floor(u.x); let b = buckets.get(k); if (!b) buckets.set(k, (b = [])); b.push(u); }
+    for (const u of Game.units) {
+      if (u.dead) continue;
+      const ux = Math.floor(u.x), uy = Math.floor(u.y), ru = Sim.radius(u);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const b = buckets.get((uy + dy) * W + ux + dx); if (!b) continue;
+        for (const v of b) {
+          if (v.id <= u.id || v.dead) continue;
+          let ddx = v.x - u.x, ddy = v.y - u.y; const min = ru + Sim.radius(v), d2 = ddx * ddx + ddy * ddy;
+          if (d2 >= min * min) continue;
+          let d = Math.sqrt(d2); if (d < 0.01) { const a = (u.id * 0.7 + v.id * 1.3) % 6.283; ddx = Math.cos(a); ddy = Math.sin(a); d = 1; }
+          const push = (min - d) * 0.5, nx = ddx / d, ny = ddy / d;
+          const fu = Sim.fixed(u), fv = Sim.fixed(v);
+          const ku = fu && fv ? 0.5 : fu ? 0 : fv ? 1 : 0.5, kv = fu && fv ? 0.5 : fv ? 0 : fu ? 1 : 0.5;
+          if (ku) { const nxp = u.x - nx * push * ku, nyp = u.y - ny * push * ku; if (World.passable(Math.floor(nxp), Math.floor(nyp), u.owner)) { u.x = nxp; u.y = nyp; } }
+          if (kv) { const nxp = v.x + nx * push * kv, nyp = v.y + ny * push * kv; if (World.passable(Math.floor(nxp), Math.floor(nyp), v.owner)) { v.x = nxp; v.y = nyp; } }
+        }
+      }
+    }
+  },
 
   /* ---- orders ---- */
   setOrder(u, order) {
@@ -104,7 +131,7 @@ const Sim = {
     else {
       for (let x = foot.x0 - 1; x <= foot.x1 + 1; x++) for (let y = foot.y0 - 1; y <= foot.y1 + 1; y++) {
         if (x >= foot.x0 && x <= foot.x1 && y >= foot.y0 && y <= foot.y1) continue;
-        if (!World.passable(x, y)) continue;
+        if (!World.passable(x, y, u.owner)) continue;
         const d = U.dist2(x, y, ux, uy); if (d < bd) { bd = d; goal = [x, y]; }
       }
     }
@@ -117,8 +144,8 @@ const Sim = {
   },
   pathTo(u, gx, gy) {
     const sx = Math.floor(u.x), sy = Math.floor(u.y);
-    if (!World.passable(gx, gy)) { const n = U.nearestTile(gx, gy, 6, (x, y) => World.passable(x, y)); if (!n) return false; gx = n[0]; gy = n[1]; }
-    const path = U.astar(sx, sy, gx, gy, World.w, World.h, (x, y) => World.passable(x, y), 5000);
+    if (!World.passable(gx, gy, u.owner)) { const n = U.nearestTile(gx, gy, 6, (x, y) => World.passable(x, y, u.owner)); if (!n) return false; gx = n[0]; gy = n[1]; }
+    const path = U.astar(sx, sy, gx, gy, World.w, World.h, (x, y) => World.passable(x, y, u.owner), 5000);
     if (!path) return false;
     u.path = path; u.pathGoal = [gx, gy];
     return true;
@@ -136,7 +163,7 @@ const Sim = {
   step(u, dt) {
     if (!u.path || !u.path.length) { u.moving = false; return 'arrived'; }
     const [tx, ty] = u.path[0];
-    if (!World.passable(tx, ty)) {
+    if (!World.passable(tx, ty, u.owner)) {
       // something was built in the way: re-path to the same goal
       if (u.pathGoal && Sim.pathTo(u, u.pathGoal[0], u.pathGoal[1])) return 'moving';
       u.path = null; u.moving = false; return 'blocked';
@@ -166,6 +193,7 @@ const Sim = {
       case 'gather': Sim.doGather(u, o, dt); break;
       case 'build': Sim.doBuild(u, o, dt); break;
       case 'attack': Sim.doAttack(u, o, dt); break;
+      case 'garrison': Sim.doGarrison(u, o, dt); break;
     }
   },
 
@@ -199,8 +227,15 @@ const Sim = {
     return best;
   },
 
+  /* The nearest enemy structure within reach, walls included: what an attacker hits when its path is blocked. */
+  blocker(u, radius) {
+    let best = null, bd = Infinity;
+    for (const b of Game.buildings) { if (b.dead || b.owner === u.owner || b.def.passable) continue; const d = Sim.distTo(u, b); if (d <= radius && d < bd) { bd = d; best = b; } }
+    return best;
+  },
   doAttack(u, o, dt) {
-    const t = o.target;
+    let t = o.target;
+    if (t && t.dead && o.after && !o.after.dead) { o.target = t = o.after; o.after = null; u.path = null; u.stuck = 0; }
     if (!t || t.dead) { if (o.resume) Sim.setOrder(u, o.resume); else Sim.idle(u); return; }
     const range = u.range > 0 ? u.range + 0.5 : 1.15;
     const d = Sim.distTo(u, t);
@@ -215,10 +250,15 @@ const Sim = {
     if (!u.path || (t.kind === 'unit' && o.repath <= 0)) {
       o.repath = 0.7;
       const ok = t.kind === 'unit' ? Sim.pathTo(u, Math.floor(t.x), Math.floor(t.y)) : Sim.pathToEntity(u, t);
-      if (!ok) { u.stuck += 1; if (u.stuck > 3) { Sim.idle(u); } return; }
+      if (!ok) { const w = Sim.blocker(u, 5); if (w && w !== t) { o.after = o.after || t; o.target = w; u.stuck = 0; return; } u.stuck += 1; if (u.stuck > 3) { Sim.idle(u); } return; }
     }
     const r = Sim.step(u, dt);
-    if (r === 'arrived' && Sim.distTo(u, t) > range) { u.path = null; u.stuck++; if (u.stuck > 4) Sim.idle(u); }
+    if (r === 'arrived' && Sim.distTo(u, t) > range) {
+      u.path = null; u.stuck++;
+      // something is in the way: a wall, most likely. Break through it, then carry on.
+      const w = Sim.blocker(u, 3.5); if (w && w !== t) { o.after = o.after || t; o.target = w; u.stuck = 0; return; }
+      if (u.stuck > 4) Sim.idle(u);
+    }
     if (r === 'blocked') u.path = null;
   },
   strike(u, t) {
@@ -228,7 +268,7 @@ const Sim = {
     Sfx.play(u.range > 0 ? 'shoot' : 'hit', u.x, u.y);
   },
   damageAmount(att, t) {
-    let dmg = att.kind === 'building' ? att.def.attack.dmg + Game.players[att.owner].mods.towerAtk : att.atk;
+    let dmg = att.kind === 'building' ? (att.atkNow || att.def.attack || att.def.garrisonAttack).dmg + Game.players[att.owner].mods.towerAtk : att.atk;
     if (att.kind === 'unit' && att.def.bonus) { const cls = t.kind === 'building' ? 'building' : t.def.cls; if (att.def.bonus[cls]) dmg *= att.def.bonus[cls]; }
     const armor = t.kind === 'building' ? t.def.armor : t.armor;
     return Math.max(1, Math.round(dmg - armor));
@@ -254,6 +294,7 @@ const Sim = {
       Sfx.play('die', t.x, t.y);
     } else {
       if (killer) killer.stats.razed++;
+      while (t.garrison.length) Sim.ungarrison(t, t.garrison[0]);
       World.setBuilding(t, false);
       for (const q of t.queue) Sim.refundQueue(owner, q);
       t.queue = [];
@@ -271,7 +312,7 @@ const Sim = {
     const r = o.res;
     const kind = r ? RES_KIND[rk(r)] : u.carry.kind;
     if (o.phase === 'to') {
-      if (!r || r.amount <= 0 || (rk(r) === 'farm' && (r.dead || !r.built))) { Sim.retarget(u, o); return; }
+      if (!r || r.removed || r.amount <= 0 || (rk(r) === 'farm' && (r.dead || !r.built))) { Sim.retarget(u, o); return; }
       if (rk(r) === 'farm' && r.worker && r.worker !== u) { Sim.retarget(u, o); return; }
       const near = rk(r) === 'farm' ? U.dist(u.x, u.y, r.x, r.y) <= 0.6 : Sim.distToRes(u, r) <= 1.0;
       if (near) { u.path = null; u.moving = false; o.phase = 'gathering'; u.face = Math.atan2((rk(r) === 'farm' ? r.y : r.y + 0.5) - u.y, (rk(r) === 'farm' ? r.x : r.x + 0.5) - u.x); return; }
@@ -280,7 +321,7 @@ const Sim = {
       if (s === 'arrived' && !(rk(r) === 'farm' ? U.dist(u.x, u.y, r.x, r.y) <= 0.6 : Sim.distToRes(u, r) <= 1.0)) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.retarget(u, o); }
       if (s === 'blocked') u.path = null;
     } else if (o.phase === 'gathering') {
-      if (!r || r.amount <= 0 || (rk(r) === 'farm' && (r.dead || !r.built))) { if (u.carry.amt > 0) o.phase = 'return'; else Sim.retarget(u, o); return; }
+      if (!r || r.removed || r.amount <= 0 || (rk(r) === 'farm' && (r.dead || !r.built))) { if (u.carry.amt > 0) o.phase = 'return'; else Sim.retarget(u, o); return; }
       const p = Game.players[u.owner];
       let rate = GATHER_RATE[rk(r)] * (1 + p.mods.gather[kind]);
       if (rk(r) === 'farm') rate *= 1 + p.mods.farmYield;
@@ -364,6 +405,7 @@ const Sim = {
   },
   /* Finished: a farm gets its farmer, a camp sends builders to the nearest matching resource. */
   afterBuild(u, b) {
+    if (b.def.wall) { let best = null, bd = 64; for (const x of Game.buildings) { if (x.dead || x.built || x.owner !== u.owner) continue; const d = U.dist2(x.x, x.y, u.x, u.y); if (d < bd) { bd = d; best = x; } } if (best) { Sim.setOrder(u, { type: 'build', bld: best }); return; } }
     if (b.def.farm && (!b.worker || b.worker.dead || b.worker === u)) { Sim.setOrder(u, { type: 'gather', res: b }); return; }
     if (b.def.dropoff && b.type !== 'townhall') {
       for (const kind of ['tree', 'berry', 'fish', 'stone', 'gold']) {
@@ -393,28 +435,90 @@ const Sim = {
         else if (q.kind === 'age') { p.age++; for (const bb of p.buildings()) if (bb.built) bb.ageVisual = p.age; Game.onAgeUp(p); }
       }
     }
-    if (b.def.attack) {
+    const atk = b.def.attack || (b.garrison.length >= 3 && b.def.garrisonAttack) || null;
+    if (atk) {
       if (b.cd > 0) b.cd -= dt;
       if (b.cd <= 0) {
-        const range = b.def.attack.range + p.mods.towerRange;
-        let best = null, bd = Infinity;
-        for (const e of Game.units) { if (e.dead || e.owner === b.owner) continue; const d = U.dist(e.x, e.y, b.x, b.y); if (d <= range + 0.5 && d < bd) { bd = d; best = e; } }
-        if (best) { b.cd = b.def.attack.rate; Game.effects.push({ kind: 'arrow', x0: b.x, y0: b.y, z0: b.size * 22 + 10, x1: best.x, y1: best.y, t: 0, dur: 0.4, dmgFrom: b, target: best }); Sfx.play('shoot', b.x, b.y); }
+        const range = atk.range + p.mods.towerRange;
+        const arrows = b.def.attack ? 1 + Math.min(3, Math.floor(b.garrison.length / 2)) : Math.min(5, Math.floor(b.garrison.length / 3));
+        const targets = Game.units.filter((e) => !e.dead && e.owner !== b.owner && U.dist(e.x, e.y, b.x, b.y) <= range + 0.5).sort((a, c) => U.dist2(a.x, a.y, b.x, b.y) - U.dist2(c.x, c.y, b.x, b.y));
+        if (targets.length) {
+          b.cd = atk.rate; b.atkNow = atk;
+          for (let k = 0; k < arrows; k++) { const best = targets[k % targets.length]; Game.effects.push({ kind: 'arrow', x0: b.x + (k % 2) * 0.3 - 0.15, y0: b.y + Math.floor(k / 2) * 0.3 - 0.15, z0: b.size * 22 + 10, x1: best.x, y1: best.y, t: 0, dur: 0.4 + k * 0.05, dmgFrom: b, target: best }); }
+          Sfx.play('shoot', b.x, b.y);
+        }
       }
     }
     if (b.def.monument) { b.monumentT += dt; if (b.monumentT >= Game.settings.monumentTime) Game.onMonumentWin(p); }
+  },
+  /* A free tile around a building's footprint, nearest to (rx, ry). */
+  spotNear(b, rx, ry, owner) {
+    let best = null, bd = Infinity;
+    for (let x = b.tx - 1; x <= b.tx + b.size; x++) for (let y = b.ty - 1; y <= b.ty + b.size; y++) {
+      if (x >= b.tx && x < b.tx + b.size && y >= b.ty && y < b.ty + b.size) continue;
+      if (!World.passable(x, y, owner)) continue;
+      const d = U.dist2(x + 0.5, y + 0.5, rx, ry); if (d < bd) { bd = d; best = [x, y]; }
+    }
+    if (!best) best = U.nearestTile(b.x, b.y, 8, (x, y) => World.passable(x, y, owner));
+    return best;
+  },
+  /* ---- garrison ---- */
+  canGarrison(u, b) { return !!(b && !b.dead && b.built && b.def.garrison && b.owner === u.owner && u.def.cls !== 'cavalry' && u.def.cls !== 'siege'); },
+  garrison(u, b) {
+    if (!Sim.canGarrison(u, b) || b.garrison.length >= b.def.garrison) return false;
+    const keep = u.order && u.order.type === 'garrison' ? u.order.prev : null;
+    Sim.setOrder(u, null); u.prevOrder = keep || null;
+    const i = Game.units.indexOf(u); if (i >= 0) Game.units.splice(i, 1);
+    const si = Game.selection.indexOf(u); if (si >= 0) { Game.selection.splice(si, 1); UI.selDirty = UI.cmdDirty = true; }
+    u.inside = b; u.path = null; u.moving = false; b.garrison.push(u);
+    if (Game.selection.includes(b)) UI.selDirty = UI.cmdDirty = true;
+    return true;
+  },
+  ungarrison(b, u) {
+    const i = b.garrison.indexOf(u); if (i < 0) return;
+    b.garrison.splice(i, 1); u.inside = null;
+    const spot = Sim.spotNear(b, b.x, b.y + b.size, u.owner) || [b.tx, b.ty + b.size];
+    u.x = spot[0] + 0.5; u.y = spot[1] + 0.5; Game.units.push(u);
+    // back to what they were doing, if it still exists
+    const o = u.prevOrder; u.prevOrder = null;
+    if (o && o.type === 'gather' && o.res && !o.res.removed && !o.res.dead && (o.res.amount > 0)) Sim.setOrder(u, { type: 'gather', res: o.res, dropoff: o.dropoff });
+    else if (o && o.type === 'build' && o.bld && !o.bld.dead) Sim.setOrder(u, { type: 'build', bld: o.bld });
+    if (Game.selection.includes(b)) UI.selDirty = UI.cmdDirty = true;
+  },
+  ungarrisonAll(b) { while (b.garrison.length) Sim.ungarrison(b, b.garrison[b.garrison.length - 1]); },
+  /* The town bell: every villager within earshot runs for the nearest shelter; ring again to send them back. */
+  ringBell(b) {
+    const p = Game.players[b.owner];
+    if (!b.bell) {
+      b.bell = true;
+      const shelters = p.buildings().filter((x) => x.built && x.def.garrison);
+      for (const u of p.units('villager')) {
+        if (U.dist(u.x, u.y, b.x, b.y) > 26) continue;
+        let best = null, bd = Infinity; for (const sh of shelters) { const room = sh.def.garrison - sh.garrison.length - Game.units.filter((v) => v.order && v.order.type === 'garrison' && v.order.bld === sh).length; if (room <= 0) continue; const d = U.dist2(u.x, u.y, sh.x, sh.y); if (d < bd) { bd = d; best = sh; } }
+        if (best) { const prev = u.order; Sim.setOrder(u, { type: 'garrison', bld: best, prev: prev && (prev.type === 'gather' || prev.type === 'build') ? prev : null }); }
+      }
+      Game.notify(b.owner, 'The bell rings. Villagers run for shelter.', 'warn', b.x, b.y);
+    } else {
+      b.bell = false;
+      for (const sh of p.buildings()) if (sh.def.garrison) { const vill = sh.garrison.filter((u) => u.type === 'villager'); for (const u of vill) Sim.ungarrison(sh, u); }
+      for (const u of p.units('villager')) if (u.order && u.order.type === 'garrison') { const prev = u.order.prev; Sim.setOrder(u, prev || null); }
+      Game.notify(b.owner, 'All clear. Villagers return to work.', 'good', b.x, b.y);
+    }
+  },
+  doGarrison(u, o, dt) {
+    const b = o.bld;
+    if (!Sim.canGarrison(u, b) || b.garrison.length >= b.def.garrison) { Sim.setOrder(u, o.prev || null); return; }
+    if (Sim.distTo(u, b) <= 1.05) { Sim.garrison(u, b); return; }
+    if (!u.path && !Sim.pathToEntity(u, b)) { u.stuck++; if (u.stuck > 2) Sim.setOrder(u, o.prev || null); return; }
+    const s = Sim.step(u, dt);
+    if (s === 'arrived' && Sim.distTo(u, b) > 1.05) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.setOrder(u, o.prev || null); }
+    if (s === 'blocked') u.path = null;
   },
   spawnUnit(b, type) {
     const p = Game.players[b.owner];
     // spawn on a free tile around the footprint, biased towards the rally point
     const rx = b.rally ? b.rally.x : b.x, ry = b.rally ? b.rally.y + 1 : b.y + b.size / 2 + 1;
-    let best = null, bd = Infinity;
-    for (let x = b.tx - 1; x <= b.tx + b.size; x++) for (let y = b.ty - 1; y <= b.ty + b.size; y++) {
-      if (x >= b.tx && x < b.tx + b.size && y >= b.ty && y < b.ty + b.size) continue;
-      if (!World.passable(x, y)) continue;
-      const d = U.dist2(x + 0.5, y + 0.5, rx, ry); if (d < bd) { bd = d; best = [x, y]; }
-    }
-    if (!best) { const n = U.nearestTile(b.x, b.y, 6, (x, y) => World.passable(x, y)); if (!n) return; best = n; }
+    const best = Sim.spotNear(b, rx, ry, b.owner); if (!best) return;
     const u = Ent.unit(type, b.owner, best[0] + 0.5, best[1] + 0.5);
     Game.units.push(u); p.stats.trained++;
     if (b.rally) {

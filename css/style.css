@@ -57,6 +57,7 @@ table.keys td:first-child { color: var(--gold); white-space: nowrap; width: 76px
 table.stats { width: 100%; border-collapse: collapse; font-size: 14px; margin: 10px 0; }
 table.stats th { text-align: left; color: var(--muted); font-weight: 400; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid var(--border); }
 table.stats td { padding: 6px; border-bottom: 1px solid rgba(90,74,48,.35); }
+#modal-text { width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; background: #120e16; color: var(--text); border: 1px solid var(--border); border-radius: 3px; padding: 8px; resize: vertical; user-select: text; -webkit-user-select: text; }
 #end-title.won { color: var(--gold2); } #end-title.lost { color: var(--red); }
 
 /* ---------- HUD ---------- */
@@ -112,7 +113,7 @@ table.stats td { padding: 6px; border-bottom: 1px solid rgba(90,74,48,.35); }
 .cmd.danger .glyph { color: var(--red); }
 #right { margin-left: auto; flex: 0 0 auto; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 #minimap { width: 180px; height: 180px; border: 1px solid var(--border); border-radius: 4px; background: #0e0b12; display: block; }
-#btn-idle { background: var(--panel3); border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; font-size: 12px; }
+#btn-army, #btn-idle { background: var(--panel3); border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; font-size: 12px; }
 #btn-idle.attention { border-color: var(--gold2); color: var(--gold2); animation: pulse 1.6s infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 rgba(232,196,106,0); } 50% { box-shadow: 0 0 10px rgba(232,196,106,.55); } }
 body.coarse #tooltip { display: none !important; }
@@ -147,7 +148,7 @@ body.coarse #tooltip { display: none !important; }
   .cmd { height: 58px; font-size: 9.5px; padding: 3px 2px 2px; } .cmd canvas { width: 30px !important; height: 30px !important; } .cmd .glyph { font-size: 18px; height: 30px; line-height: 30px; } .cmd .key { display: none; }
   #right { position: fixed; right: 6px; top: calc(var(--safe-top) + 46px); margin: 0; gap: 3px; order: 0; z-index: 11; }
   #minimap { width: 92px; height: 92px; }
-  #btn-idle { font-size: 10px; padding: 4px 5px; }
+  #btn-idle, #btn-army { font-size: 10px; padding: 4px 5px; }
   #log { top: calc(var(--safe-top) + 46px); left: 6px; max-width: calc(100vw - 118px); gap: 2px; } .msg { font-size: 11px; padding: 3px 7px; }
   #hover { display: none; }
   #hint { bottom: auto; top: calc(var(--safe-top) + 150px); font-size: 11px; white-space: normal; max-width: 70vw; text-align: center; }

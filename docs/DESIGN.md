@@ -63,6 +63,15 @@ Two different registers, on purpose:
 - Idle soldiers acquire targets within sight. Attack-move engages anything met en route and then resumes.
 - Towers and Keeps shoot the nearest enemy unit in range; Fletching upgrades extend them.
 - A player is defeated when they hold no buildings and no villagers. A finished Monument wins after 5 minutes.
+- Units never overlap: each tick, overlapping units are nudged apart (busy units hold their ground).
+- Walls: palisade (250 hp, 4 wood) and stone (900 hp, 5 stone), placed as straight runs. Gates are passable only for
+  their owner and can replace an existing wall piece. An attacker whose path is blocked switches to the nearest
+  enemy structure in reach, then returns to its original target.
+- Garrison: Town Hall 15, Watchtower 5, Keep 10 (villagers, infantry, archers). Towers fire one extra arrow per two
+  garrisoned; a Town Hall with three or more inside starts shooting. The Town Bell shelters every villager within
+  earshot and, rung again, sends each back to the task they left.
+- Saving: the whole match serialises by id (units, buildings, orders, garrisons, resources, fog) on top of the
+  seed-regenerated map; autosave every 60 s of game time, plus text export/import.
 
 ### Bot AI (one pass per second)
 1. **Plan** — decide what to save for (the next age once 13+ villagers are up and prerequisites exist).
@@ -80,17 +89,15 @@ Two different registers, on purpose:
 ## Roadmap
 Things deliberately left out of the first release, roughly in the order they should land:
 
-1. **Save and resume** — serialise the whole match to localStorage (entities are plain objects with ids, so this is
-   mostly plumbing) and autosave every minute.
-2. **Walls and gates** — drag-to-place palisade/stone wall segments with connecting art, gates that open for friends.
-3. **Villager safety** — town bell (garrison in the Town Hall), flee from soldiers, auto-repair.
-4. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
-5. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
-6. **Market** — trade one resource for another, tribute to allies.
-7. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
-8. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
-9. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
-10. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
+1. **Bots that wall and garrison** — the AI does not yet build walls or ring the bell.
+2. **Villager safety** — flee from soldiers, auto-repair.
+3. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
+4. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
+5. **Market** — trade one resource for another, tribute to allies.
+6. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
+7. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
+8. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
+9. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
 
 ## What is original here
 Names (Dawn/Hearth/Forge/Empire ages, Hall of Scholars, Keep, Monument), all art, sounds, text, balance and code are

@@ -157,7 +157,7 @@ const Renderer = {
     const reveal = Game.settings.reveal, exp = World.explored, vis = World.visible;
     for (const r of World.res) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 1 + r.ox + r.oy, k: 'res', o: r });
     for (const r of World.decals) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 0.3, k: 'res', o: r });
-    for (const b of Game.buildings) { if (b.dead || !inView(b.x, b.y)) continue; if (!reveal && !exp[World.idx(b.tx, b.ty)] && !exp[World.idx(b.tx + b.size - 1, b.ty + b.size - 1)]) continue; list.push({ d: b.tx + b.ty + b.size, k: 'bld', o: b }); }
+    for (const b of Game.buildings) { if (b.dead || !inView(b.x, b.y)) continue; if (!reveal && !exp[World.idx(b.tx, b.ty)] && !exp[World.idx(b.tx + b.size - 1, b.ty + b.size - 1)]) continue; list.push({ d: b.def.passable ? b.tx + b.ty - 0.5 : b.tx + b.ty + b.size, k: 'bld', o: b }); }
     for (const u of Game.units) { if (u.dead || !inView(u.x, u.y)) continue; if (u.owner !== Game.human && !reveal && !vis[World.idx(Math.floor(u.x), Math.floor(u.y))]) { u.sx = null; continue; } list.push({ d: u.x + u.y, k: 'unit', o: u }); }
     for (const e of Game.effects) { const ex = e.x != null ? e.x : U.lerp(e.x0, e.x1, e.t / e.dur), ey = e.y != null ? e.y : U.lerp(e.y0, e.y1, e.t / e.dur); if (inView(ex, ey)) list.push({ d: ex + ey + (e.kind === 'corpse' || e.kind === 'rubble' ? -0.4 : 0.6), k: 'fx', o: e }); }
     if (this.ghost) list.push({ d: this.ghost.tx + this.ghost.ty + this.ghost.def.size, k: 'ghost', o: this.ghost });
@@ -355,14 +355,15 @@ const Renderer = {
     if (!b.built) { this.at(b.tx, b.ty, 0); this.drawSite(b, age); return; }
     const z = this.cam.zoom, zq = this.zq(z), s = b.size;
     const grown = b.def.farm ? (b.worker && !b.worker.dead ? 1 : 0) : 0;
-    const key = 'b|' + b.type + '|' + b.ageVisual + '|' + b.owner + '|' + grown + '|' + zq.toFixed(3);
+    const mask = b.def.wall ? World.wallMask(b) : 0;
+    const key = 'b|' + b.type + '|' + b.ageVisual + '|' + b.owner + '|' + grown + '|' + mask + '|' + zq.toFixed(3);
     let sp = this.sprites.get(key);
     if (!sp) {
       const k = this.spriteK(zq), hgt = this.height(b) + 70, W = Math.ceil((s * 64 + 72) * k), H = Math.ceil((s * 32 + hgt + 40) * k), ax = W / 2 - 8 * k, ay = hgt * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
-      const fake = { tx: 0, ty: 0, size: s, x: s / 2, y: s / 2, def: b.def, type: b.type, built: true, worker: grown ? { dead: false } : null, owner: b.owner, ageVisual: b.ageVisual };
+      const fake = { tx: 0, ty: 0, size: s, x: s / 2, y: s / 2, def: b.def, type: b.type, built: true, worker: grown ? { dead: false } : null, owner: b.owner, ageVisual: b.ageVisual, mask };
       this.at(0, 0, 0); this.footShadow(fake); this.mat = age;
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
       this.mat = null; this.oldSchool(cv, 9);
@@ -380,7 +381,7 @@ const Renderer = {
     else if (sh === 'tower') this.flag(this.P(0.5, 0.5, 62), col);
     else if (sh === 'keep') this.flag(this.P(s * 0.5, s * 0.5, 50), col);
     else if (sh === 'monument') { const t = this.P(s / 2, s / 2, 48); this.flag([t[0], t[1] - 44], col); }
-    else if (sh !== 'farm') this.flag(this.P(s, 0, this.height(b) + 4), col);
+    else if (sh !== 'farm' && sh !== 'wall' && sh !== 'gate') this.flag(this.P(s, 0, this.height(b) + 4), col);
     if (sh === 'smithy') { const c = this.P(s * 0.82, s * 0.32, 32); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(s, s * 0.25, 9); this.ell(w[0], w[1], 4, 3, `rgba(255,140,40,${0.6 + 0.3 * Math.sin(this.time * 7)})`); }
   },
   /* Sprites are rasterised at one texel per CSS pixel (or smaller when zoomed out) and stamped with
@@ -432,7 +433,7 @@ const Renderer = {
     else if (kind === 'slate') { for (let y = 5; y < hgt; y += 5) { row(y / hgt, U.alpha('#000', 0.22), 1); row((y - 1) / hgt, U.alpha('#fff', 0.1), 0.7); } }
     g.restore();
   },
-  height(b) { return { 1: 30, 2: 26, 3: 32, 4: 40 }[b.size] * ({ tower: 1.9, keep: 1.5, hall: 1.2, monument: 1.2, farm: 0 }[b.def.shape] || 1); },
+  height(b) { if (b.def.shape === 'wall') return b.def.wall === 'stone' ? 26 : 18; if (b.def.shape === 'gate') return 34; return { 1: 30, 2: 26, 3: 32, 4: 40 }[b.size] * ({ tower: 1.9, keep: 1.5, hall: 1.2, monument: 1.2, farm: 0 }[b.def.shape] || 1); },
   /* A box on the footprint: left face (D-C), right face (C-B), and a flat top. */
   box(x0, y0, x1, y1, z0, h, wall, wallDark, top) {
     const P = (x, y, z) => this.P(x, y, z);
@@ -647,6 +648,36 @@ const Renderer = {
     const top = this.P(s / 2, s / 2, 48); this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62)], '#c9a54a');
     this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s / 2, s / 2, 92)], '#e0c060'); this.poly([this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#b08a30'); this.poly([this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#d8b040');
   },
+  /* Wall pieces join up with their neighbours: a post in the middle and a run towards every connected side. */
+  wallCols(b) { return b.def.wall === 'stone' ? { wall: '#9a948a', dark: '#6e6960', top: '#b8b2a6', mat: 'stone' } : { wall: '#8d6c3e', dark: '#5f4728', top: '#a88852', mat: 'plank' }; },
+  shape_wall(b, age, p) {
+    const g = this.g, c = this.wallCols(b), m = b.mask || 0, h = this.height(b), stone = b.def.wall === 'stone';
+    const saveMat = this.mat; this.mat = { wallMat: c.mat };
+    const runs = []; if (m & 4) runs.push([0, 0.34, 0.5, 0.66]); if (m & 8) runs.push([0.34, 0, 0.66, 0.5]); if (m & 1) runs.push([0.5, 0.34, 1, 0.66]); if (m & 2) runs.push([0.34, 0.5, 0.66, 1]);
+    for (const [x0, y0, x1, y1] of runs) {
+      this.box(x0, y0, x1, y1, 0, h, c.wall, c.dark, c.top);
+      if (stone) { for (let t = 0.1; t < 1; t += 0.3) { const cx = U.lerp(x0, x1, t), cy = U.lerp(y0, y1, t); this.box(cx - 0.06, cy - 0.06, cx + 0.06, cy + 0.06, h, 4, c.wall, c.dark, c.top); } }
+      else { g.fillStyle = c.top; for (let t = 0.08; t < 1; t += 0.16) { const q = this.P(U.lerp(x0, x1, t), U.lerp(y0, y1, t), h); this.poly([[q[0] - 3, q[1] + 2], [q[0], q[1] - 5], [q[0] + 3, q[1] + 2]], c.top); } }
+    }
+    this.box(0.3, 0.3, 0.7, 0.7, 0, h + (stone ? 6 : 4), c.wall, c.dark, c.top);
+    if (!stone) { const q = this.P(0.5, 0.5, h + 4); this.poly([[q[0] - 5, q[1] + 3], [q[0], q[1] - 6], [q[0] + 5, q[1] + 3]], c.top); }
+    this.mat = saveMat;
+  },
+  shape_gate(b, age, p) {
+    const g = this.g, c = this.wallCols(b), m = b.mask || 0, h = this.height(b), stone = b.def.wall === 'stone';
+    const alongX = (m & 5) || !(m & 10); // walls east/west: the opening runs north-south
+    const saveMat = this.mat; this.mat = { wallMat: c.mat };
+    const piers = alongX ? [[0, 0.3, 0.28, 0.7], [0.72, 0.3, 1, 0.7]] : [[0.3, 0, 0.7, 0.28], [0.3, 0.72, 0.7, 1]];
+    for (const [x0, y0, x1, y1] of piers) this.box(x0, y0, x1, y1, 0, h, c.wall, c.dark, c.top);
+    // lintel over the opening and two open doors
+    const a = alongX ? this.P(0.14, 0.5, h - 4) : this.P(0.5, 0.14, h - 4), d = alongX ? this.P(0.86, 0.5, h - 4) : this.P(0.5, 0.86, h - 4);
+    g.strokeStyle = c.dark; g.lineWidth = 6; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(d[0], d[1]); g.stroke(); g.strokeStyle = c.top; g.lineWidth = 2; g.beginPath(); g.moveTo(a[0], a[1] - 2); g.lineTo(d[0], d[1] - 2); g.stroke();
+    const door = stone ? '#5a4128' : '#6f5230';
+    if (alongX) { this.box(0.28, 0.62, 0.34, 0.9, 0, h - 8, door, U.shade(door, -0.3), door); this.box(0.66, 0.62, 0.72, 0.9, 0, h - 8, door, U.shade(door, -0.3), door); }
+    else { this.box(0.62, 0.28, 0.9, 0.34, 0, h - 8, door, U.shade(door, -0.3), door); this.box(0.62, 0.66, 0.9, 0.72, 0, h - 8, door, U.shade(door, -0.3), door); }
+    const f = this.P(alongX ? 0.14 : 0.5, alongX ? 0.5 : 0.14, h); g.fillStyle = p.color.main; g.fillRect(f[0] - 3, f[1] - 9, 6, 8);
+    this.mat = saveMat;
+  },
   shape_farm(b, age, p) {
     const g = this.g, s = b.size, P = (x, y) => this.P(x, y);
     const A = P(0, 0), B = P(s, 0), C = P(s, s), D = P(0, s);
@@ -676,12 +707,13 @@ const Renderer = {
 
   drawGhost(gh) {
     const g = this.g, s = gh.def.size;
+    if (gh.line) { for (const [tx, ty, ok] of gh.line) { this.at(tx, ty, 0); const A = this.P(0, 0), B = this.P(1, 0), C = this.P(1, 1), D = this.P(0, 1); this.poly([A, B, C, D], ok ? 'rgba(122,201,67,0.45)' : 'rgba(216,72,74,0.45)', ok ? '#7ac943' : '#d8484a', 1.5); } return; }
     this.at(gh.tx, gh.ty, 0);
     const ok = gh.ok;
     g.globalAlpha = 0.6;
     const A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
     this.poly([A, B, C, D], ok ? 'rgba(122,201,67,0.45)' : 'rgba(216,72,74,0.45)', ok ? '#7ac943' : '#d8484a', 1.5);
-    if (ok) { const fake = { tx: gh.tx, ty: gh.ty, size: s, x: gh.tx + s / 2, y: gh.ty + s / 2, def: gh.def, type: gh.type, built: true, worker: null, owner: Game.human }; const age = AGES[Game.players[Game.human].age]; this.mat = age; const fn = this['shape_' + gh.def.shape] || this.shape_house; fn.call(this, fake, age, Game.players[Game.human]); this.mat = null; }
+    if (ok) { const fake = { tx: gh.tx, ty: gh.ty, size: s, x: gh.tx + s / 2, y: gh.ty + s / 2, def: gh.def, type: gh.type, built: true, worker: null, owner: Game.human, mask: 0 }; const age = AGES[Game.players[Game.human].age]; this.mat = age; const fn = this['shape_' + gh.def.shape] || this.shape_house; fn.call(this, fake, age, Game.players[Game.human]); this.mat = null; }
     g.globalAlpha = 1;
   },
 

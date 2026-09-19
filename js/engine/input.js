@@ -24,7 +24,7 @@ const Input = {
     const [x, y] = this.pos(e); const m = this.mouse;
     m.down = true; m.button = e.button; m.sx = x; m.sy = y; m.x = x; m.y = y; m.dragging = false;
     if (e.button === 1 || (e.button === 0 && this.keys[' '])) { m.panning = true; e.preventDefault(); return; }
-    if (e.button === 0 && Game.placing) { Game.placeAt(x, y, e.shiftKey); return; }
+    if (e.button === 0 && Game.placing) { if (Game.placing.wall) Game.beginWall(x, y); else Game.placeAt(x, y, e.shiftKey); return; }
     if (e.button === 2) {
       if (Game.placing) { Game.cancelPlacing(); return; }
       if (Game.mode) { Game.mode = null; UI.refreshCommands(); return; }
@@ -45,6 +45,7 @@ const Input = {
     const m = this.mouse; if (!m.down) return;
     m.down = false;
     if (m.panning) { m.panning = false; return; }
+    if (e.button === 0 && Game.placing && Game.placing.wall && Game.wallStart) { Game.placeWall(m.x, m.y); Renderer.selBox = null; m.dragging = false; return; }
     if (e.button === 0 && !Game.placing) {
       if (m.dragging) { Game.boxSelect(Renderer.selBox, e.shiftKey); }
       else if (Game.mode) { Game.commandAt(m.x, m.y, e.shiftKey, Game.mode); Game.mode = null; UI.refreshCommands(); }
@@ -64,7 +65,8 @@ const Input = {
     if ((e.ctrlKey || e.metaKey) && /^[0-9]$/.test(e.key)) { e.preventDefault(); Game.groups[e.key] = Game.selection.filter((s) => s.kind === 'unit'); UI.toast('Group ' + e.key + ' set'); return; }
     if (/^[0-9]$/.test(e.key) && Game.groups[e.key]) { const g = Game.groups[e.key].filter((u) => !u.dead); if (g.length) { Game.select(g); if (Game.lastGroupKey === e.key && Game.time - Game.lastGroupT < 0.5) Game.focus(g[0]); Game.lastGroupKey = e.key; Game.lastGroupT = Game.time; } return; }
     if (k === 'h') { const th = Game.players[Game.human].buildings('townhall')[0]; if (th) { Game.select([th]); Game.focus(th); } return; }
-    if (k === '.' || k === ',') { Game.nextIdleVillager(); return; }
+    if (k === '.') { Game.nextIdleVillager(); return; }
+    if (k === ',') { Game.selectArmy(); return; }
     if (k === '=' || k === '+') { Renderer.zoomAt(1.2, Renderer.W / 2, Renderer.H / 2); return; }
     if (k === '-') { Renderer.zoomAt(1 / 1.2, Renderer.W / 2, Renderer.H / 2); return; }
     if (e.key === 'Delete') { Game.deleteSelected(); return; }
@@ -90,11 +92,18 @@ const Input = {
     Sfx.init(); Sfx.resume();
     const r = this.el.getBoundingClientRect();
     if (phase === 'start') {
-      for (const t of e.changedTouches) this.touches.set(t.identifier, { x: t.clientX - r.left, y: t.clientY - r.top, sx: t.clientX - r.left, sy: t.clientY - r.top, moved: false, t: performance.now() });
+      for (const t of e.changedTouches) {
+        const o = { x: t.clientX - r.left, y: t.clientY - r.top, sx: t.clientX - r.left, sy: t.clientY - r.top, moved: false, t: performance.now(), box: false };
+        // hold a finger still for a moment to start a selection box
+        o.timer = setTimeout(() => { if (this.touches.size === 1 && !o.moved && !Game.placing) { o.box = true; Renderer.selBox = { x0: o.sx, y0: o.sy, x1: o.sx, y1: o.sy }; UI.hint('Drag to select, lift to finish'); if (navigator.vibrate) navigator.vibrate(12); } }, 380);
+        this.touches.set(t.identifier, o);
+      }
       if (this.touches.size === 2) { const [a, b] = [...this.touches.values()]; this.pinch = { d: U.dist(a.x, a.y, b.x, b.y), zoom: Renderer.cam.zoom }; }
       if (Game.placing && this.touches.size === 1) { const t = [...this.touches.values()][0]; Game.updateGhost(t.x, t.y); }
     } else if (phase === 'move') {
       for (const t of e.changedTouches) { const o = this.touches.get(t.identifier); if (!o) continue; const nx = t.clientX - r.left, ny = t.clientY - r.top; if (Math.abs(nx - o.sx) > 8 || Math.abs(ny - o.sy) > 8) o.moved = true;
+        if (o.box) { Renderer.selBox = { x0: Math.min(o.sx, nx), y0: Math.min(o.sy, ny), x1: Math.max(o.sx, nx), y1: Math.max(o.sy, ny) }; o.x = nx; o.y = ny; continue; }
+        if (o.moved && o.timer) { clearTimeout(o.timer); o.timer = null; }
         if (this.touches.size === 1 && o.moved) {
           if (Game.placing) Game.updateGhost(nx, ny);
           else { const z = Renderer.cam.zoom; const dx = (nx - o.x) / (32 * z), dy = (ny - o.y) / (16 * z); Renderer.cam.x -= (dx + dy) / 2; Renderer.cam.y -= (dy - dx) / 2; Renderer.clampCam(); }
@@ -104,20 +113,22 @@ const Input = {
     } else {
       for (const t of e.changedTouches) {
         const o = this.touches.get(t.identifier); this.touches.delete(t.identifier); if (!o) continue;
+        if (o.timer) clearTimeout(o.timer);
+        if (o.box) { Game.boxSelect(Renderer.selBox, false); Renderer.selBox = null; UI.hint(null); UI.cmdDirty = true; continue; }
         if (!o.moved && this.touches.size === 0 && performance.now() - o.t < 600) this.tap(o.x, o.y);
       }
       if (this.touches.size < 2) this.pinch = null;
     }
   },
   tap(x, y) {
-    if (Game.placing) { Game.placeAt(x, y, false); return; }
+    if (Game.placing) { if (Game.placing.wall) { if (!Game.wallStart) { Game.beginWall(x, y); UI.hint('Tap the other end of the wall'); } else Game.placeWall(x, y); } else Game.placeAt(x, y, false); return; }
     if (Game.mode) { Game.commandAt(x, y, false, Game.mode); Game.mode = null; UI.refreshCommands(); return; }
     // Own thing under the finger: select it. Otherwise, with units selected, it's a command.
     const u = Renderer.pickUnit(x, y), b = u ? null : Renderer.pickBuilding(x, y);
     const own = (u && u.owner === Game.human) || (b && b.owner === Game.human);
     const haveUnits = Game.selection.some((s) => s.kind === 'unit');
     const haveBuilding = Game.selection.some((s) => s.kind === 'building');
-    if (own && !(haveUnits && b && b.owner === Game.human && (!b.built || b.hp < b.maxHp || b.def.farm))) { Game.clickSelect(x, y, false, false); return; }
+    if (own && !(haveUnits && b && b.owner === Game.human && (!b.built || b.hp < b.maxHp || b.def.farm || b.def.garrison))) { Game.clickSelect(x, y, false, false); return; }
     if (haveUnits || haveBuilding) { Game.commandAt(x, y, false); return; }
     Game.clickSelect(x, y, false, false);
   },

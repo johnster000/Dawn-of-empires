@@ -5,9 +5,16 @@ const UI = {
   $(id) { return document.getElementById(id); },
   init() {
     const $ = this.$;
-    ['hud', 'topbar', 'log', 'selpanel', 'commands', 'tooltip', 'toast', 'title', 'setup', 'howto', 'pause', 'end', 'pop', 'age', 'clock', 'btn-idle', 'minimap', 'monument', 'hint', 'speed'].forEach((id) => (this.els[id] = $(id)));
+    ['hud', 'topbar', 'log', 'selpanel', 'commands', 'tooltip', 'toast', 'title', 'setup', 'howto', 'pause', 'end', 'modal', 'pop', 'age', 'clock', 'btn-idle', 'minimap', 'monument', 'hint', 'speed'].forEach((id) => (this.els[id] = $(id)));
     for (const r of RESOURCES) { const el = document.querySelector(`.res[data-res="${r}"]`); el.querySelector('.ricon').replaceWith(this.resIcon(r, 18)); this.els['res-' + r] = el.querySelector('.val'); el.title = RESOURCE_INFO[r].desc; }
     $('btn-new').onclick = () => { Sfx.init(); Sfx.play('ui'); this.showScreen('setup'); };
+    $('btn-continue').onclick = () => { Sfx.init(); Sfx.resume(); const d = Save.read(); if (!d) { this.toast('No saved game'); this.syncContinue(); return; } try { Save.restore(d); this.message('Game restored.', 'good'); } catch (e) { this.showScreen('title'); this.toast(e.message); } };
+    $('btn-save').onclick = () => { Game.save(false); };
+    $('btn-export').onclick = () => this.exportSave();
+    $('btn-import').onclick = () => this.importSave();
+    $('btn-modal-close').onclick = () => { this.els.modal.hidden = true; if (!Game.running) this.showScreen('title'); else if (Game.paused) this.showScreen('pause'); };
+    $('btn-modal-copy').onclick = async () => { const ta = $('modal-text'); ta.select(); try { await navigator.clipboard.writeText(ta.value); this.toast('Copied'); } catch (e) { try { document.execCommand('copy'); this.toast('Copied'); } catch (err) { this.toast('Select the text and copy it'); } } };
+    $('btn-modal-import').onclick = () => { const r = Save.importText($('modal-text').value); if (r.error) { this.toast(r.error); Sfx.play('error'); return; } this.els.modal.hidden = true; this.showScreen(null); this.message(`Imported: ${r.meta.age}, ${r.meta.time} played.`, 'good'); };
     $('btn-howto').onclick = () => { Sfx.play('ui'); this.showHowTo(false); };
     $('btn-howto-back').onclick = () => { Sfx.play('ui'); if (Game.running) { this.showScreen(null); } else this.showScreen('title'); };
     $('btn-sound').onclick = () => { Sfx.init(); Sfx.setEnabled(!Sfx.enabled); this.syncSound(); try { localStorage.setItem('doe-sound', Sfx.enabled ? '1' : '0'); } catch (e) {} };
@@ -24,6 +31,7 @@ const UI = {
     $('btn-end-title').onclick = () => { Game.quit(); };
     $('btn-end-continue').onclick = () => { this.showScreen(null); Game.paused = false; };
     $('btn-idle').onclick = () => Game.nextIdleVillager();
+    $('btn-army').onclick = () => Game.selectArmy();
     const cycleSpeed = () => { const s = [1, 1.5, 2, 3]; Game.settings.speed = s[(s.indexOf(Game.settings.speed) + 1) % s.length]; this.syncSpeed(); };
     $('speed').onclick = cycleSpeed; $('btn-pause-speed').onclick = cycleSpeed;
     for (const b of document.querySelectorAll('.donate')) b.addEventListener('click', (e) => { setTimeout(() => { try { if (!window.open) b.classList.add('blocked'); } catch (err) {} }, 0); });
@@ -40,10 +48,21 @@ const UI = {
     this.syncSound();
     this.showScreen('title');
   },
+  syncContinue() { const b = this.$('btn-continue'); const d = Save.exists() ? Save.meta(Save.read()) : null; b.hidden = !d; if (d) b.textContent = `Continue · ${d.age}, ${d.time}`; },
+  exportSave() {
+    if (!Game.running) return;
+    const $ = this.$; $('modal-title').textContent = 'Export save'; $('modal-sub').textContent = 'Copy this text and keep it somewhere. Paste it into Import on any device to pick the game up there.';
+    $('modal-text').value = Save.exportText(); $('btn-modal-import').hidden = true; $('btn-modal-copy').hidden = false; this.showScreen('modal'); $('modal-text').select();
+  },
+  importSave() {
+    const $ = this.$; $('modal-title').textContent = 'Import a save'; $('modal-sub').textContent = 'Paste the text from Export. It replaces the saved game on this device and starts straight away.';
+    $('modal-text').value = ''; $('btn-modal-import').hidden = false; $('btn-modal-copy').hidden = true; this.showScreen('modal'); $('modal-text').focus();
+  },
   syncSound() { const t = Sfx.enabled ? 'Sounds on' : 'Sounds off'; this.$('btn-sound').textContent = t; this.$('btn-pause-sound').textContent = t; },
   syncSpeed() { const sp = Game.settings.speed; this.els.speed.textContent = '»' + sp + '×'; this.$('btn-pause-speed').textContent = 'Speed: ' + ({ 1: 'Normal', 1.5: 'Fast', 2: 'Very fast', 3: 'Fastest' }[sp] || sp + '×'); },
   showScreen(id) {
-    for (const s of ['title', 'setup', 'howto', 'pause', 'end']) this.els[s].hidden = s !== id;
+    for (const s of ['title', 'setup', 'howto', 'pause', 'end', 'modal']) this.els[s].hidden = s !== id;
+    if (id === 'title') this.syncContinue();
     this.els.hud.hidden = !Game.running;
     document.body.classList.toggle('in-game', Game.running);
   },
@@ -180,6 +199,7 @@ const UI = {
         if (s.def.pop) stats.appendChild(this.stat('Housing', '+' + s.def.pop));
         if (s.def.dropoff) stats.appendChild(this.stat('Stores', s.def.dropoff.join(', ')));
         if (s.def.farm) stats.appendChild(this.stat('Farmer', s.worker && !s.worker.dead ? 'working' : 'none'));
+        if (s.def.garrison) stats.appendChild(this.stat('Garrison', `${s.garrison.length} / ${s.def.garrison}`, 'Right-click with villagers or foot soldiers to garrison'));
         el.appendChild(stats);
         if (!s.built) el.appendChild(U.el('div', 'sel-activity', `Under construction · ${Math.floor(s.progress * 100)}%` + (s.buildersLast ? ` · ${s.buildersLast} builder${s.buildersLast > 1 ? 's' : ''}` : ' · no builders')));
         else if (s.queue.length) {
@@ -237,7 +257,7 @@ const UI = {
       if (Game.placing) {
         cmds.push({ label: 'Cancel', glyph: '✕', desc: 'Stop placing.', onClick: () => Game.cancelPlacing() });
       } else if (Game.buildMenu && vill.length) {
-        for (const id of BUILD_MENU) {
+        for (const id of (Game.buildMenu === 'defence' ? DEFENCE_MENU : BUILD_MENU)) {
           const d = BUILDINGS[id];
           let why = null; if (d.age > p.age) why = 'Requires the ' + AGES[d.age].name; else if (!p.canAfford(d.cost)) why = 'Not enough ' + p.missing(d.cost).join(', ');
           if (d.monument && p.buildings('monument').length) why = 'Only one Monument';
@@ -245,8 +265,10 @@ const UI = {
         }
         cmds.push({ label: 'Back', glyph: '↩', desc: 'Back to unit commands.', onClick: () => { Game.buildMenu = false; this.refreshCommands(); } });
       } else {
-        if (vill.length) cmds.push({ label: 'Build', glyph: '⚒', desc: 'Open the building menu.', onClick: () => { Game.buildMenu = true; this.refreshCommands(); } });
+        if (vill.length) cmds.push({ label: 'Build', glyph: '⚒', desc: 'Houses, farms, camps and workshops.', onClick: () => { Game.buildMenu = 'main'; this.refreshCommands(); } });
+        if (vill.length) cmds.push({ label: 'Defences', glyph: '🛡', desc: 'Walls, gates, towers and keeps.', onClick: () => { Game.buildMenu = 'defence'; this.refreshCommands(); } });
         if (mil.length) cmds.push({ label: 'Attack move', glyph: '⚔', desc: 'Advance to a point, fighting anything met on the way.', active: Game.mode === 'attackmove', onClick: () => { Game.mode = Game.mode === 'attackmove' ? null : 'attackmove'; this.refreshCommands(); } });
+        if (vill.length) cmds.push({ label: 'Repair', glyph: '🔧', desc: 'Pick one of your buildings to mend it.', active: Game.mode === 'repair', onClick: () => { Game.mode = Game.mode === 'repair' ? null : 'repair'; this.refreshCommands(); } });
         cmds.push({ label: 'Stop', glyph: '■', desc: 'Stop and stand still.', onClick: () => { for (const u of units) Sim.idle(u); Sfx.play('ack'); this.selDirty = true; } });
         cmds.push({ label: 'Move', glyph: '➤', desc: 'Move to a point without fighting. (Right-click does this too.)', active: Game.mode === 'move', onClick: () => { Game.mode = Game.mode === 'move' ? null : 'move'; this.refreshCommands(); } });
       }
@@ -260,6 +282,8 @@ const UI = {
           if (p.buildings().some((bb) => bb.queue.some((q) => q.kind === 'tech' && q.id === id))) why = 'Being researched';
           cmds.push({ label: t.name, icon: ['tech', id, Game.human], cost: t.cost, desc: t.desc + ` Takes ${t.time}s.`, locked: t.age > p.age, disabled: why, onClick: () => Game.train(blds, { kind: 'tech', id }) }); }
         if (b.def.ageUp && AGES[p.age + 1]) { const nx = AGES[p.age + 1]; const why = p.ageUpBlocker(); cmds.push({ label: 'Advance to ' + nx.name, glyph: nx.numeral, cost: nx.advance.cost, desc: `${nx.blurb} Needs ${nx.advance.needCount} different ${AGES[p.age].name} buildings. Takes ${nx.advance.time}s.`, disabled: why, onClick: () => Game.train(blds, { kind: 'age' }) }); }
+        if (b.def.ageUp) cmds.push({ label: b.bell ? 'All clear' : 'Town bell', glyph: '🔔', active: b.bell, desc: b.bell ? 'Send everyone back to work.' : 'Every villager nearby runs into the nearest Town Hall, tower or keep.', onClick: () => Game.ringBell() });
+        if (b.def.garrison && blds.some((x) => x.garrison.length)) cmds.push({ label: 'Ungarrison', glyph: '⇲', desc: 'Everyone inside comes out.', onClick: () => { for (const x of blds) Sim.ungarrisonAll(x); Sfx.play('ack'); this.selDirty = true; this.refreshCommands(); } });
         if (b.def.trains && b.rally) cmds.push({ label: 'Clear rally', glyph: '⚑', desc: 'New units will gather at the building again.', onClick: () => { for (const x of blds) x.rally = null; Sfx.play('ui'); this.refreshCommands(); } });
       }
       cmds.push({ label: 'Demolish', glyph: '🕱', desc: b.built ? 'Tear this building down.' : 'Abandon the site. Unspent materials are returned.', danger: true, onClick: () => Game.deleteSelected() });
@@ -273,9 +297,11 @@ const UI = {
       btn.onmouseenter = () => this.showTip(btn, c); btn.onmouseleave = () => this.hideTip();
       el.appendChild(btn); this.commands.push(c);
     });
-    if (Game.placing) this.hint('Click to place · Shift-click to place several · Right-click or Esc to cancel');
+    if (Game.placing && Game.placing.wall) this.hint(Game.wallStart ? 'Drag to the other end, then release' : 'Click and drag to lay a run of wall · Right-click or Esc to finish');
+    else if (Game.placing) this.hint('Click to place · Shift-click to place several · Right-click or Esc to cancel');
     else if (Game.mode === 'attackmove') this.hint('Click a destination to attack-move');
     else if (Game.mode === 'move') this.hint('Click a destination');
+    else if (Game.mode === 'repair') this.hint('Click one of your buildings to repair it');
     else this.hint(null);
   },
   hotkey(k) {
