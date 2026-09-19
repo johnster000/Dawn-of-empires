@@ -2,9 +2,9 @@
    The bot plays by the same rules as the human (same costs, same units); difficulty changes its
    targets, tempo and a small gather-rate modifier, not what it is allowed to do. */
 const DIFF = {
-  easy:   { tick: 1.4, villagers: 12, army: 16, attackGap: 240, firstAttack: 480, gather: -0.15, farms: 4, towers: 0, techs: false, reserve: 0 },
-  normal: { tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  reserve: 0 },
-  hard:   { tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  reserve: 0 },
+  easy:   { tick: 1.4, villagers: 12, army: 16, attackGap: 240, firstAttack: 480, gather: -0.15, farms: 4, towers: 0, techs: false, walls: false },
+  normal: { tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  walls: true, wallAge: 1, stoneAge: 2, wallVillagers: 14 },
+  hard:   { tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  walls: true, wallAge: 0, stoneAge: 1, wallVillagers: 12 },
 };
 const AI = {
   create(p) {
@@ -21,8 +21,11 @@ const AI = {
     if (!S.home && !vill.length) return;
     AI.plan(p, S, th, vill);
     AI.defend(p, S, mil);
+    AI.bell(p, S, th, mil);
     AI.economy(p, S, th, vill);
     AI.construct(p, S, th, vill);
+    AI.walls(p, S, vill);
+    AI.repair(p, S, vill);
     AI.research(p, S);
     AI.trainMilitary(p, S);
     AI.attack(p, S, mil);
@@ -271,6 +274,83 @@ const AI = {
       if (s < bs) { bs = s; best = b; }
     }
     return best;
+  },
+  /* Raiders at the gates and not enough soldiers to meet them: ring the bell. All clear after twelve quiet seconds. */
+  bell(p, S, th, mil) {
+    if (!th || !S.home) return;
+    const home = S.home;
+    let enemies = 0; for (const u of Game.units) if (!u.dead && u.owner !== p.id && u.type !== 'villager' && U.dist(u.x, u.y, home.x, home.y) < 16) enemies++;
+    if (enemies) S.lastEnemy = Game.time;
+    const ownNear = mil.filter((u) => U.dist(u.x, u.y, home.x, home.y) < 16).length;
+    if (!th.bell && enemies >= 2 && ownNear < enemies) Sim.ringBell(th);
+    else if (th.bell && Game.time - (S.lastEnemy == null ? -99 : S.lastEnemy) > 12) Sim.ringBell(th);
+  },
+  /* A ring of wall around the town with a gate in each side, filled in a few pieces at a time and mended when breached. */
+  walls(p, S, vill) {
+    const D = S.D; if (!D.walls || p.age < D.wallAge || !S.home || !vill.length) return;
+    S.wallT = (S.wallT || 0) + 1; if (S.wallT % 3) return;
+    // walls come out of surplus: the town proper comes first, and a reserve stays for houses and workshops
+    if (S.needBuilding || p.buildings().some((b) => !b.built && !b.def.wall) || p.count('barracks') === 0 || p.buildings().filter((b) => !b.def.wall).length < 8) return;
+    if (!S.ring) {
+      if (vill.length < D.wallVillagers) return;
+      const own = p.buildings().filter((b) => !b.def.wall);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const b of own) { x0 = Math.min(x0, b.tx); y0 = Math.min(y0, b.ty); x1 = Math.max(x1, b.tx + b.size - 1); y1 = Math.max(y1, b.ty + b.size - 1); }
+      const m = 4; x0 = U.clamp(x0 - m, 1, World.w - 2); y0 = U.clamp(y0 - m, 1, World.h - 2); x1 = U.clamp(x1 + m, 1, World.w - 2); y1 = U.clamp(y1 + m, 1, World.h - 2);
+      if (x1 - x0 < 8 || y1 - y0 < 8) return;
+      S.ring = { x0, y0, x1, y1 }; S.gateTiles = null;
+    }
+    const stone = p.age >= D.stoneAge && p.res.stone >= 250;
+    const wallType = stone ? 'stonewall' : 'palisade', gateType = stone ? 'stonegate' : 'palisadegate';
+    const r = S.ring;
+    // gates first: one per side, on the open tile nearest the middle of that side
+    if (!S.gateTiles) {
+      S.gateTiles = [];
+      const mx = Math.round((r.x0 + r.x1) / 2), my = Math.round((r.y0 + r.y1) / 2);
+      const sides = [[(x) => [x, r.y0], mx, r.x0, r.x1], [(x) => [x, r.y1], mx, r.x0, r.x1], [(y) => [r.x0, y], my, r.y0, r.y1], [(y) => [r.x1, y], my, r.y0, r.y1]];
+      for (const [f, mid, lo, hi] of sides) {
+        for (let d = 0; d <= hi - lo; d++) { let found = null; for (const k of [mid - d, mid + d]) { if (k < lo + 1 || k > hi - 1) continue; const [x, y] = f(k); if (World.canPlace(BUILDINGS[gateType], x, y, true) && World.passable(x, y)) { found = [x, y]; break; } } if (found) { S.gateTiles.push(found); break; } }
+      }
+      if (S.gateTiles.length < 2) { S.ring = null; S.gateTiles = null; return; } // no way to leave a door open here; try another day
+    }
+    const gateKey = new Set(S.gateTiles.map(([x, y]) => x + ',' + y));
+    let gates = 0;
+    for (const [x, y] of S.gateTiles) {
+      const b = World.bld[World.idx(x, y)];
+      if (b && !b.dead) { if (b.owner === p.id && b.def.gate) gates++; continue; }
+      if (p.canAfford(BUILDINGS[gateType].cost) && World.canPlace(BUILDINGS[gateType], x, y, true) && Game.placeBuilding(p, gateType, x, y)) gates++;
+    }
+    if (gates < Math.min(2, S.gateTiles.length)) return;      // never seal the town without doors
+    const reserve = stone ? { stone: 150 } : { wood: 220 };
+    if (!AI.spendable(p, S, reserve)) return;
+    const tiles = [];
+    for (let x = r.x0; x <= r.x1; x++) { tiles.push([x, r.y0]); tiles.push([x, r.y1]); }
+    for (let y = r.y0 + 1; y < r.y1; y++) { tiles.push([r.x0, y]); tiles.push([r.x1, y]); }
+    let placed = 0; const cap = (stone ? p.res.stone : p.res.wood) > 500 ? 10 : 5;
+    for (const [x, y] of tiles) {
+      if (placed >= cap || !p.canAfford(reserve)) break;
+      if (gateKey.has(x + ',' + y)) continue;
+      const b = World.bld[World.idx(x, y)];
+      if (b && !b.dead) continue;                               // ours, or something else standing there
+      const def = BUILDINGS[wallType];
+      if (!World.canPlace(def, x, y, true) || !p.canAfford(def.cost)) continue;
+      if (Game.placeBuilding(p, wallType, x, y)) placed++;
+    }
+    // two villagers on wall duty while there are pieces to raise
+    const unbuilt = p.buildings().filter((b) => b.def.wall && !b.built).sort((a, c) => (c.def.gate ? 1 : 0) - (a.def.gate ? 1 : 0));
+    if (!unbuilt.length) return;
+    const onDuty = vill.filter((v) => v.order && v.order.type === 'build' && v.order.bld && v.order.bld.def.wall).length;
+    for (let k = onDuty; k < 2; k++) { const target = unbuilt[0].def.gate ? unbuilt[0] : unbuilt[Math.floor(Math.random() * unbuilt.length)]; const v = AI.pickBuilder(vill, target); if (v) Sim.setOrder(v, { type: 'build', bld: target }); }
+  },
+  /* Mend anything badly damaged once no enemy is near it. */
+  repair(p, S, vill) {
+    if (!vill.length || S.attackingHome) return;
+    for (const b of p.buildings()) {
+      if (!b.built || b.hp > b.maxHp * 0.6) continue;
+      if (Game.units.some((u) => !u.dead && u.owner !== p.id && u.type !== 'villager' && U.dist(u.x, u.y, b.x, b.y) < 10)) continue;
+      if (vill.some((v) => v.order && v.order.type === 'build' && v.order.bld === b)) continue;
+      const v = AI.pickBuilder(vill, b); if (v) { Sim.setOrder(v, { type: 'build', bld: b }); return; }
+    }
   },
   /* Someone is hitting our buildings or villagers: respond with whatever is idle nearby. */
   defend(p, S, mil) {

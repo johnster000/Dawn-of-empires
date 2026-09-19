@@ -28,7 +28,8 @@ phones and tablets (tap, drag, pinch).
 - **19 technologies** — weapon, armour and range lines at the Blacksmith; wheelbarrow, axes, picks, ploughs and
   conscription at the Hall of Scholars; Loom at the Town Hall.
 - **Bot opponents** — up to five rivals on three difficulties. They gather, build, save up for the next age,
-  research, raise armies, raid, defend and rebuild, using exactly the same rules as the player.
+  research, raise armies, raid, wall their towns, ring the bell, repair, defend and rebuild, using exactly the same
+  rules as the player.
 - **Procedural maps** — four terrains (Meadow, Desert, Tundra, Highlands), three sizes, seeded so a map can be
   replayed. Fog of war with soft edges, a diamond minimap, and an optional revealed map.
 - **Settings** — number of rivals, difficulty, starting resources, starting age, population cap, game speed,

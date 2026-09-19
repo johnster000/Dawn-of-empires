@@ -82,22 +82,26 @@ Two different registers, on purpose:
    library/keep → workshop/monument); keep sites staffed; age up when eligible.
 5. **Research** — cheapest useful technology from the surplus above the savings goal.
 6. **Military** — train the best available unit at every military building from surplus; gather at the frontier.
-7. **Attack** — when the army reaches its threshold and the cooldown has passed, attack-move at the nearest enemy
+7. **Walls** (Normal from the Hearth Age, Hard from the start) — once the core town stands, a ring four tiles beyond
+   the buildings with a gate on each side, palisade first and stone when affordable, placed a few pieces at a time
+   from surplus wood and mended when breached. Two villagers are kept on wall duty.
+8. **Bell and repairs** — two or more raiders near home with fewer defenders present rings the Town Bell; twelve quiet
+   seconds ring the all-clear. Badly damaged buildings are repaired once no enemy is near.
+9. **Attack** — when the army reaches its threshold and the cooldown has passed, attack-move at the nearest enemy
    building (soft targets and the human preferred), roll to the next target, go home after 2.5 minutes or when
    reduced to two units.
 
 ## Roadmap
 Things deliberately left out of the first release, roughly in the order they should land:
 
-1. **Bots that wall and garrison** — the AI does not yet build walls or ring the bell.
-2. **Villager safety** — flee from soldiers, auto-repair.
-3. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
-4. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
-5. **Market** — trade one resource for another, tribute to allies.
-6. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
-7. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
-8. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
-9. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
+1. **Villager safety** — flee from soldiers when caught in the open.
+2. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
+3. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
+4. **Market** — trade one resource for another, tribute to allies.
+5. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
+6. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
+7. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
+8. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
 
 ## What is original here
 Names (Dawn/Hearth/Forge/Empire ages, Hall of Scholars, Keep, Monument), all art, sounds, text, balance and code are
