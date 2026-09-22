@@ -29,7 +29,11 @@ const UI = {
     $('btn-quit').onclick = () => { Game.quit(); };
     $('btn-end-again').onclick = () => { Game.newGame(Game.settings); };
     $('btn-end-title').onclick = () => { Game.quit(); };
-    $('btn-end-continue').onclick = () => { this.showScreen(null); Game.paused = false; };
+    $('btn-end-continue').onclick = () => {
+      // the match is decided, so there is nothing left to hide: show the whole map
+      Game.settings.reveal = true; World.updateFog(Game.human, true); Renderer.fogDirty = true; Renderer.miniT = 0;
+      this.showScreen(null); Game.paused = false; this.message('The map is yours to look over.', 'good');
+    };
     $('btn-idle').onclick = () => Game.nextIdleVillager();
     $('btn-army').onclick = () => Game.selectArmy();
     const cycleSpeed = () => { const s = [1, 1.5, 2, 3]; Game.settings.speed = s[(s.indexOf(Game.settings.speed) + 1) % s.length]; this.syncSpeed(); };
@@ -171,6 +175,8 @@ const UI = {
   /* ---- selection panel ---- */
   refreshSelection() {
     const el = this.els.selpanel; const sel = Game.selection.filter((s) => !s.dead);
+    if (Game.selectedRes && Game.selectedRes.removed) Game.selectedRes = null;
+    if (!sel.length && Game.selectedRes) { this.showResource(Game.selectedRes); return; }
     if (!sel.length) { el.innerHTML = ''; el.hidden = true; this.els.commands.hidden = true; return; }
     el.hidden = false;
     const p = Game.players[sel[0].owner];
@@ -232,6 +238,34 @@ const UI = {
       const hp = sel.reduce((a, s) => a + s.hp, 0), mx = sel.reduce((a, s) => a + s.maxHp, 0);
       el.appendChild(U.el('div', 'sel-activity', `${sel.length} selected · ${Math.round((hp / mx) * 100)}% health`));
     }
+  },
+  /* What is left in a patch of trees, a seam or a shoal. */
+  showResource(r) {
+    const NAMES = { tree: 'Trees', stone: 'Stone', gold: 'Gold vein', berry: 'Berry bush', fish: 'Fish shoal' };
+    const el = this.els.selpanel; el.hidden = false; el.innerHTML = '';
+    const kind = RES_KIND[r.kind], info = RESOURCE_INFO[kind];
+    const head = U.el('div', 'sel-head');
+    head.appendChild(Renderer.resPortrait(r.kind, 44));
+    const side = U.el('div', 'sel-info');
+    side.appendChild(U.el('div', 'sel-name', NAMES[r.kind] || r.kind));
+    const gives = U.el('div', 'sel-owner', 'Gives ' + info.name.toLowerCase()); gives.style.color = info.color; side.appendChild(gives);
+    const bar = U.el('div', 'hpbar'), fill = U.el('div', 'fill'), f = r.amount / r.max;
+    fill.style.width = U.clamp(f * 100, 0, 100) + '%'; fill.style.background = info.color;
+    bar.appendChild(fill); bar.appendChild(U.el('span', null, Math.ceil(r.amount) + ' / ' + r.max));
+    side.appendChild(bar); head.appendChild(side); el.appendChild(head);
+    const p = Game.players[Game.human], cap = BASE_CARRY + p.mods.carry;
+    let workers = 0, free = 0;
+    for (const u of Game.units) if (!u.dead && u.order && u.order.type === 'gather' && u.order.res === r) workers++;
+    for (const sp of Sim.resSpots(r)) { const h = Sim.claims.get(Sim.key(sp[0], sp[1])); if (!h || h.dead) free++; }
+    const stats = U.el('div', 'sel-stats');
+    stats.appendChild(this.stat('Loads left', Math.ceil(r.amount / cap), 'A villager carries ' + cap + ' at a time'));
+    stats.appendChild(this.stat('Gatherers', workers));
+    stats.appendChild(this.stat('Free spots', free, 'How many more villagers can reach it'));
+    stats.appendChild(this.stat('Depleted', Math.round(100 - U.clamp(f * 100, 0, 100)) + '%'));
+    el.appendChild(stats);
+    const pct = Math.round(U.clamp(f, 0, 1) * 100);
+    el.appendChild(U.el('div', 'sel-activity', workers ? workers + (workers === 1 ? ' villager working it' : ' villagers working it') : pct < 100 ? 'Partly worked. Right-click it with villagers.' : 'Untouched. Right-click it with villagers.'));
+    this.els.commands.hidden = true; this.commands = [];
   },
   stat(label, value, title) { const d = U.el('div', 'stat'); d.appendChild(U.el('span', 'label', label)); d.appendChild(U.el('span', 'value', String(value))); if (title) d.title = title; return d; },
   activity(u) {

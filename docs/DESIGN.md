@@ -39,7 +39,7 @@ Two different registers, on purpose:
 - Terrain from value noise: water, shore, ground; four palettes/generation profiles. Edges biased to land so no start
   is cut off. Each start gets guaranteed forest, stone, gold and berries within 5–12 tiles.
 - Fog of war for the human player (explored / visible per tile), updated three times a second from sight radii.
-- Map sizes 64², 88², 112². Up to six players spaced evenly on a ring.
+- Map sizes 64², 88², 112², 144². Up to six players spaced evenly on a ring.
 
 ### Economy
 - Villagers gather ~0.45–0.55 per second, carry 10 (+5 per cart technology), deposit at the nearest matching drop-off.
@@ -56,6 +56,15 @@ Two different registers, on purpose:
 | Forge (III) | red tile / stone | 800 food, 200 gold | 2 of Range, Stables, Blacksmith, Watchtower |
 | Empire (IV) | slate / pale stone, gold trim | 1000 food, 700 gold | 2 of Hall of Scholars, Keep, Blacksmith, Watchtower |
 
+### Interface
+- Resources are selectable: they light up under the pointer and a click shows the kind, how much is left, how many
+  loads that is, who is working it, and how many more villagers can reach it. The panel clears itself when the last
+  of it is carried away.
+- The minimap is a 2:1 diamond in a 2:1 frame. A square frame left half of it empty.
+- The interface bar along the bottom lets the pointer through its gaps; as a solid strip it swallowed right clicks,
+  middle drags and the wheel over a third of the screen.
+- Winning and choosing to play on lifts the fog of war: the match is decided, so there is nothing left to hide.
+
 ### Combat
 - Damage = max(1, attack × bonus − armour). Ranged attacks are projectiles that land ~0.35 s later.
 - Counters: Spearman ×2 vs cavalry; Archers ×1.5 vs infantry; cavalry ×1.5 vs archers and siege; Swordsman ×1.5 and
@@ -68,8 +77,18 @@ Two different registers, on purpose:
 - Gathering uses claimed standing spots. A resource can only be worked from the passable tiles around it; each worker
   claims one, and when a resource has none free the worker is sent to the nearest one of its kind that does. Sending
   ten villagers at one tree therefore spreads them over the nearby stand instead of piling them on a single tile.
-- Every unit carries a jam watchdog: no movement for 1.2 s re-routes it, and continued failure sends it to another
-  target (a different tree, or whatever structure blocks its path).
+- Every unit carries a jam watchdog: no real progress for about two seconds re-routes it, and continued failure sends
+  it to another target (a different tree, or whatever structure blocks its path). The count decays rather than
+  resetting, so a unit that jitters on the spot cannot hide from it by twitching.
+- A unit standing on its next waypoint skips to the one after it. Requiring it to reach the exact tile centre pinned
+  units inside crowds, where neighbours shove away the last fraction of a tile every tick and the unit walks on the
+  spot forever. This was the cause of villagers appearing to run in circles around each other.
+- Arrival at a building (drop-off, building site, garrison, a wall being attacked) is judged at 1.6 tiles rather than
+  1.0. A unit has width and gets shoved by its neighbours, so a crowd settles a little over a tile out; anything
+  tighter and the ones on the outside never register as having arrived, rack up failures and abandon the job.
+- Whoever is sent somewhere gets their own tile. Two units handed the same one shove each other over it forever, so
+  the ring of destination tiles widens until there are enough to go round; and a unit whose tile someone has settled
+  on takes the nearest free one instead of circling the spot.
 - Pathing: an 8-way A* on reusable typed arrays, with a straight-line shortcut for hops of up to three tiles and a
   per-tick budget of full searches (past it a unit gets a shallow best-effort route and refines it later).
 - Villagers flee soldiers within five tiles: into a garrisonable building if one is no further off than the threat,

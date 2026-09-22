@@ -3,6 +3,10 @@
 const GATHER_RATE = { berry: 0.5, tree: 0.55, stone: 0.45, gold: 0.45, farm: 0.48, fish: 0.5 };
 const RES_KIND = { berry: 'food', tree: 'wood', stone: 'stone', gold: 'gold', farm: 'food', fish: 'food' };
 const BASE_CARRY = 10;
+/* How close counts as "at" a building. A unit has width and gets shoved by its neighbours, so a crowd around a
+   drop-off or a building site settles a little over a tile out; anything tighter than this and the ones on the
+   outside never register as having arrived. */
+const REACH = 1.6;
 /* Resource kind of a gather target: natural resources carry their own kind; a farm is a building. */
 const rk = (r) => (r && r.kind === 'building' ? 'farm' : r ? r.kind : null);
 
@@ -86,9 +90,23 @@ const Sim = {
   /* Nobody stands inside anybody else: overlapping units are nudged apart each tick. Units busy at a task hold
      their ground; walkers and idlers give way. */
   radius(u) { return u.def.cls === 'cavalry' ? 0.32 : u.def.cls === 'siege' ? 0.38 : 0.24; },
+  tileUnits: new Map(),
+  /* Is somebody other than `except` standing on this tile? */
+  occupied(x, y, except) {
+    const b = this.tileUnits.get(y * World.w + x); if (!b) return false;
+    for (const v of b) if (v !== except && !v.dead) return true;
+    return false;
+  },
+  /* Somebody who has stopped for good: idle, or busy at a task. A unit on its way somewhere will move on,
+     so it is worth waiting for; one that has settled never will. */
+  settledOn(x, y, except) {
+    const b = this.tileUnits.get(y * World.w + x); if (!b) return false;
+    for (const v of b) if (v !== except && !v.dead && (!v.order || Sim.fixed(v))) return true;
+    return false;
+  },
   fixed(u) { const o = u.order; return !!(o && ((o.type === 'gather' && o.phase === 'gathering') || (o.type === 'build' && !u.moving && !u.path) || (o.type === 'attack' && !u.moving))); },
   separate() {
-    const buckets = new Map(), W = World.w;
+    const buckets = this.tileUnits = new Map(), W = World.w;
     for (const u of Game.units) { if (u.dead) continue; const k = Math.floor(u.y) * W + Math.floor(u.x); let b = buckets.get(k); if (!b) buckets.set(k, (b = [])); b.push(u); }
     for (const u of Game.units) {
       if (u.dead) continue;
@@ -103,11 +121,16 @@ const Sim = {
           const push = (min - d) * 0.5;
           let nx = ddx / d, ny = ddy / d;
           const fu = Sim.fixed(u), fv = Sim.fixed(v);
-          // walkers are nudged sideways as well as apart, so two crowds slide past instead of jamming head-on
-          if (!fu || !fv) { const t = ((u.id + v.id) & 1) ? 1 : -1, k = 0.55; const rx = nx * (1 - k) - ny * t * k, ry = ny * (1 - k) + nx * t * k, rl = Math.hypot(rx, ry) || 1; nx = rx / rl; ny = ry / rl; }
+          // Two walkers closing head-on get a sideways nudge so they slide past. Everyone else is pushed straight
+          // apart: a mutual sideways nudge between units that are not closing on each other spins the pair, and
+          // a knot of them ends up orbiting instead of getting anywhere.
+          if (!fu && !fv && u.moving && v.moving && Math.cos(u.face) * Math.cos(v.face) + Math.sin(u.face) * Math.sin(v.face) < -0.15) {
+            const t = ((u.id + v.id) & 1) ? 1 : -1, k = 0.4;
+            const rx = nx * (1 - k) - ny * t * k, ry = ny * (1 - k) + nx * t * k, rl = Math.hypot(rx, ry) || 1; nx = rx / rl; ny = ry / rl;
+          }
           const ku = fu && fv ? 0.5 : fu ? 0 : fv ? 1 : 0.5, kv = fu && fv ? 0.5 : fv ? 0 : fu ? 1 : 0.5;
-          if (ku) { const nxp = u.x - nx * push * ku, nyp = u.y - ny * push * ku; if (World.passable(Math.floor(nxp), Math.floor(nyp), u.owner)) { u.x = nxp; u.y = nyp; } }
-          if (kv) { const nxp = v.x + nx * push * kv, nyp = v.y + ny * push * kv; if (World.passable(Math.floor(nxp), Math.floor(nyp), v.owner)) { v.x = nxp; v.y = nyp; } }
+          if (ku) { const nxp = u.x - nx * push * ku, nyp = u.y - ny * push * ku; if (World.passable(Math.floor(nxp), Math.floor(nyp), u.owner)) { u.x = nxp; u.y = nyp; } if (!u.order) u.shoved = 1; }
+          if (kv) { const nxp = v.x + nx * push * kv, nyp = v.y + ny * push * kv; if (World.passable(Math.floor(nxp), Math.floor(nyp), v.owner)) { v.x = nxp; v.y = nyp; } if (!v.order) v.shoved = 1; }
         }
       }
     }
@@ -186,6 +209,17 @@ const Sim = {
     }
   },
   idle(u) { Sim.setOrder(u, null); },
+  /* Shuffle to the nearest tile with nobody standing on it and nobody's gathering spot claimed. */
+  stepAside(u) {
+    const cx = Math.floor(u.x), cy = Math.floor(u.y);
+    const clear = (x, y) => {
+      if (!World.passable(x, y, u.owner) || Sim.claims.has(Sim.key(x, y))) return false;
+      for (const v of Game.units) if (v !== u && !v.dead && Math.floor(v.x) === x && Math.floor(v.y) === y) return false;
+      return true;
+    };
+    const t = U.nearestTile(cx, cy, 3, clear);
+    if (t && (t[0] !== cx || t[1] !== cy)) Sim.setOrder(u, { type: 'move', x: t[0], y: t[1] });
+  },
 
   /* Path to a spot adjacent to a footprint (or onto it, if flat). Returns true if a path was set. */
   pathToEntity(u, e) {
@@ -236,6 +270,12 @@ const Sim = {
   /* Walk along the path. Returns 'arrived', 'moving' or 'blocked'. */
   step(u, dt) {
     if (!u.path || !u.path.length) { u.moving = false; return 'arrived'; }
+    // Already standing on the next waypoint: take the one after it. Requiring a unit to reach the exact tile
+    // centre pins it inside a crowd, where its neighbours shove away the last fraction of a tile every tick,
+    // so it walks on the spot for as long as the crowd lasts.
+    const ux = Math.floor(u.x), uy = Math.floor(u.y);
+    while (u.path.length && u.path[0][0] === ux && u.path[0][1] === uy) u.path.shift();
+    if (!u.path.length) { u.moving = false; return 'arrived'; }
     const [tx, ty] = u.path[0];
     if (!World.passable(tx, ty, u.owner)) {
       // something was built in the way: re-path to the same goal
@@ -258,14 +298,20 @@ const Sim = {
     if (u.stillT < 0.6) return;
     const moved = U.dist2(u.x, u.y, u.wx == null ? u.x : u.wx, u.wy == null ? u.y : u.wy);
     u.stillT = 0; u.wx = u.x; u.wy = u.y;
-    if (moved > 0.03) { u.jam = 0; return; }
+    if (moved > 0.09) { u.jam = Math.max(0, (u.jam || 0) - 1); return; }   // 0.3 of a tile in 0.6 s
     u.jam = (u.jam || 0) + 1;
-    if (u.jam === 2) { u.path = null; return; }             // try a fresh route
-    if (u.jam >= 4) { u.jam = 0; Sim.unjam(u); }            // still nowhere: give up on this target
+    if (u.jam === 3) { u.path = null; return; }             // try a fresh route
+    if (u.jam >= 6) { u.jam = 0; Sim.unjam(u); }            // still nowhere after a few seconds: change target
   },
   unjam(u) {
     const o = u.order; if (!o) return;
-    if (o.type === 'gather' && o.res) { const kind = rk(o.res); if (kind !== 'farm') { const alt = Sim.nearestFree(u, kind, u.x, u.y, 16, o.res); if (alt && Sim.assignGather(u, alt, o.dropoff, 16)) return; } Sim.retarget(u, o); return; }
+    if (o.type === 'gather' && o.res) {
+      const kind = rk(o.res);
+      if (kind !== 'farm') { const alt = Sim.nearestFree(u, kind, u.x, u.y, 16, o.res); if (alt && Sim.assignGather(u, alt, o.dropoff, 16)) return; }
+      // nowhere better to send them: keep the job and try the walk again rather than standing about idle
+      if (!o.res.removed && !o.res.dead && o.res.amount > 0) { u.path = null; u.stuck = 0; return; }
+      Sim.retarget(u, o); return;
+    }
     // an attacker that cannot reach its target takes down whatever is in the way first
     if (o.type === 'attack' || o.type === 'attackmove') { const w = Sim.blocker(u, 6); if (w && w !== o.target) { Sim.setOrder(u, { type: 'attack', target: w, after: o.type === 'attack' ? o.target : null, resume: o.type === 'attackmove' ? o : null }); return; } }
     if (o.type === 'flee') { Sim.setOrder(u, o.prev || null); return; }
@@ -325,6 +371,12 @@ const Sim = {
     const o = u.order;
     if (!o) {
       u.moving = false; u.idleT += dt;
+      // standing in someone's way: shuffle to a clear tile rather than be shunted along by them
+      if (u.shoved) {
+        u.shoved = 0; u.asideT = (u.asideT || 0) - dt;
+        // a few shuffles is helpful; endlessly giving way in a busy crowd just looks like milling about
+        if (u.asideT <= 0 && (u.asideN || 0) < 3) { u.asideT = 3; u.asideN = (u.asideN || 0) + 1; Sim.stepAside(u); }
+      } else { u.calmT = (u.calmT || 0) + dt; if (u.calmT > 5) { u.calmT = 0; u.asideN = 0; } }
       if (u.def.cls !== 'villager') Sim.scan(u, dt);
       return;
     }
@@ -342,8 +394,17 @@ const Sim = {
   doMove(u, o, dt) {
     if (!u.path) { if (!Sim.pathTo(u, o.x, o.y)) { Sim.idle(u); return; } }
     const r = Sim.step(u, dt);
-    if (r === 'arrived') { if (o.then) { const t = o.then; Sim.setOrder(u, t); } else Sim.idle(u); }
-    else if (r === 'blocked') Sim.idle(u);
+    const done = () => { if (o.then) Sim.setOrder(u, o.then); else Sim.idle(u); };
+    if (r === 'arrived') { done(); return; }
+    if (r === 'blocked') { Sim.idle(u); return; }
+    // Somebody has settled on the tile we were sent to. Walking at it anyway is what makes a unit circle the
+    // spot forever, so take the nearest free tile instead, and after a few tries just stop where we are.
+    if (U.dist(u.x, u.y, o.x + 0.5, o.y + 0.5) < 2.5 && Sim.settledOn(o.x, o.y, u)) {
+      o.reseat = (o.reseat || 0) + 1;
+      const free = o.reseat <= 4 && U.nearestTile(o.x, o.y, 3, (x, y) => World.passable(x, y, u.owner) && !Sim.occupied(x, y, u));
+      if (free) { o.x = free[0]; o.y = free[1]; u.path = null; }
+      else { u.path = null; done(); }
+    }
   },
 
   /* Look for something hostile within sight. Military only. */
@@ -387,7 +448,7 @@ const Sim = {
     let t = o.target;
     if (t && t.dead && o.after && !o.after.dead) { o.target = t = o.after; o.after = null; u.path = null; u.stuck = 0; }
     if (!t || t.dead) { if (o.resume) Sim.setOrder(u, o.resume); else Sim.idle(u); return; }
-    const range = u.range > 0 ? u.range + 0.5 : 1.15;
+    const range = u.range > 0 ? u.range + 0.5 : t.kind === 'building' ? REACH : 1.15;
     const d = Sim.distTo(u, t);
     if (d <= range) {
       u.path = null; u.moving = false;
@@ -491,14 +552,14 @@ const Sim = {
     } else if (o.phase === 'return') {
       const dOff = o.dropoff && !o.dropoff.dead && o.dropoff.built ? o.dropoff : (o.dropoff = Sim.nearestDropoff(u, u.carry.kind));
       if (!dOff) { Game.notify(u.owner, 'No drop-off point for ' + u.carry.kind + '.', 'warn', u.x, u.y); Sim.idle(u); return; }
-      if (Sim.distTo(u, dOff) <= 1.0) {
+      if (Sim.distTo(u, dOff) <= REACH) {
         const p = Game.players[u.owner]; p.res[u.carry.kind] += u.carry.amt; p.stats.gathered[u.carry.kind] += u.carry.amt; u.carry.amt = 0; u.path = null;
         if (r && r.amount > 0 && !(rk(r) === 'farm' && (r.dead || !r.built))) o.phase = 'to'; else Sim.retarget(u, o);
         return;
       }
       if (!u.path && !Sim.pathToEntity(u, dOff)) { Sim.idle(u); return; }
       const s = Sim.step(u, dt);
-      if (Sim.distTo(u, dOff) <= 1.0) return;              // arrival is banked on the next tick
+      if (Sim.distTo(u, dOff) <= REACH) return;            // arrival is banked on the next tick
       if (s === 'arrived') { u.path = null; u.stuck++; if (u.stuck > 3) Sim.idle(u); }
       if (s === 'blocked') u.path = null;
     }
@@ -530,11 +591,11 @@ const Sim = {
     const b = o.bld;
     if (!b || b.dead) { Sim.idle(u); return; }
     if (b.built && b.hp >= b.maxHp) { Sim.afterBuild(u, b); return; }
-    const near = b.def.passable ? U.dist(u.x, u.y, b.x, b.y) <= 1.2 : Sim.distTo(u, b) <= 1.0;
+    const near = b.def.passable ? U.dist(u.x, u.y, b.x, b.y) <= 1.4 : Sim.distTo(u, b) <= REACH;
     if (!near) {
       if (!u.path && !Sim.pathToEntity(u, b)) { u.stuck++; if (u.stuck > 2) { Sim.idle(u); Game.notify(u.owner, 'Cannot reach the building site.', 'warn', b.x, b.y); } return; }
       const s = Sim.step(u, dt);
-      if (s === 'arrived' && !(b.def.passable ? U.dist(u.x, u.y, b.x, b.y) <= 1.2 : Sim.distTo(u, b) <= 1.0)) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.idle(u); }
+      if (s === 'arrived' && !(b.def.passable ? U.dist(u.x, u.y, b.x, b.y) <= 1.4 : Sim.distTo(u, b) <= REACH)) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.idle(u); }
       if (s === 'blocked') u.path = null;
       return;
     }
@@ -670,10 +731,10 @@ const Sim = {
   doGarrison(u, o, dt) {
     const b = o.bld;
     if (!Sim.canGarrison(u, b) || b.garrison.length >= b.def.garrison) { Sim.setOrder(u, o.prev || null); return; }
-    if (Sim.distTo(u, b) <= 1.05) { Sim.garrison(u, b); return; }
+    if (Sim.distTo(u, b) <= REACH) { Sim.garrison(u, b); return; }
     if (!u.path && !Sim.pathToEntity(u, b)) { u.stuck++; if (u.stuck > 2) Sim.setOrder(u, o.prev || null); return; }
     const s = Sim.step(u, dt);
-    if (s === 'arrived' && Sim.distTo(u, b) > 1.05) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.setOrder(u, o.prev || null); }
+    if (s === 'arrived' && Sim.distTo(u, b) > REACH) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.setOrder(u, o.prev || null); }
     if (s === 'blocked') u.path = null;
   },
   spawnUnit(b, type) {

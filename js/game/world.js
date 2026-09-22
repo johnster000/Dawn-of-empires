@@ -46,6 +46,7 @@ const World = {
   removeResource(r) {
     if (r.removed) return;
     r.removed = true;
+    if (Game.selectedRes === r) { Game.selectedRes = null; UI.selDirty = true; }
     if (r.kind === 'tree') this.decals.push({ kind: 'stump', x: r.x, y: r.y, ox: r.ox, oy: r.oy, v: r.v });
     this.resAt[this.idx(r.x, r.y)] = null;
     const i = this.res.indexOf(r); if (i >= 0) this.res.splice(i, 1);

@@ -21,6 +21,8 @@ phones and tablets (tap, drag, pinch).
   palisade and stone walls with gates that only your own people can pass.
 - **Garrisons** — villagers and foot soldiers shelter inside the Town Hall, towers and keeps, which then shoot more
   arrows. The Town Bell pulls every villager in and sends them back to work afterwards.
+- **Resources tell you what is left** — they light up under the pointer, and a click shows how much remains, how many
+  loads that is, who is working it and how many more villagers can reach it.
 - **Villagers look after themselves** — they run from soldiers, take cover in the nearest building with room, and go
   back to the job they left once the danger passes. Send a crowd at one tree and they spread over the stand around it
   rather than queueing on one tile.
@@ -33,8 +35,8 @@ phones and tablets (tap, drag, pinch).
 - **Bot opponents** — up to five rivals on three difficulties. They gather, build, save up for the next age,
   research, raise armies, raid, wall their towns, ring the bell, repair, defend and rebuild, using exactly the same
   rules as the player.
-- **Procedural maps** — four terrains (Meadow, Desert, Tundra, Highlands), three sizes, seeded so a map can be
-  replayed. Fog of war with soft edges, a diamond minimap, and an optional revealed map.
+- **Procedural maps** — four terrains (Meadow, Desert, Tundra, Highlands), four sizes up to 144×144, seeded so a map
+  can be replayed. Fog of war with soft edges, a diamond minimap, and an optional revealed map.
 - **Settings** — number of rivals, difficulty, starting resources, starting age, population cap, game speed,
   player colour, map seed.
 - **Feedback** — floating alerts with click-to-jump, minimap pings, a synthesized soundscape (no audio files), and a

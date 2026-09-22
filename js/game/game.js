@@ -4,7 +4,7 @@ const Game = {
   defaults: { mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
   settings: null, players: [], human: 0, units: [], buildings: [], effects: [], selection: [], groups: {},
   running: false, paused: false, over: false, time: 0, acc: 0, lastTs: 0, seed: 0,
-  placing: null, buildMenu: false, wallStart: null, mode: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,
+  placing: null, buildMenu: false, wallStart: null, mode: null, selectedRes: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,
 
   init() {
     for (const k in TERRAINS) TERRAINS[k].id = k;
@@ -22,7 +22,7 @@ const Game = {
     delete s.forceSeed;
     s.seed = this.seed;
     this.units = []; this.buildings = []; this.effects = []; this.selection = []; this.groups = {}; this.players = []; Sim.claims.clear();
-    this.time = 0; this.acc = 0; this.saveT = 0; this.over = false; this.paused = false; this.placing = null; this.mode = null; this.buildMenu = false; this.idleIdx = 0; this.alertT = -99;
+    this.time = 0; this.acc = 0; this.saveT = 0; this.over = false; this.paused = false; this.placing = null; this.mode = null; this.buildMenu = false; this.selectedRes = null; this.idleIdx = 0; this.alertT = -99;
     Ent.nextId = 1; UI.iconCache.clear(); UI.log.forEach((m) => m.el.remove()); UI.log = []; UI.lastRes = {};
     const startRes = { low: { food: 100, wood: 100, stone: 50, gold: 50 }, normal: { food: 200, wood: 200, stone: 100, gold: 100 }, high: { food: 600, wood: 600, stone: 300, gold: 300 }, huge: { food: 2000, wood: 2000, stone: 1000, gold: 1000 } }[s.resources];
     const n = 1 + U.clamp(s.enemies, 1, 5);
@@ -96,7 +96,7 @@ const Game = {
 
   /* ---- selection ---- */
   select(list) {
-    this.selection = list.filter((s) => !s.dead); this.buildMenu = false; this.mode = null;
+    this.selection = list.filter((s) => !s.dead); this.selectedRes = null; this.buildMenu = false; this.mode = null;
     if (this.placing) this.cancelPlacing();
     UI.selDirty = UI.cmdDirty = true; UI.hideTip();
     if (list.length) Sfx.play('select');
@@ -108,7 +108,13 @@ const Game = {
     const now = performance.now();
     const dbl = hit && this.lastClick && this.lastClick.e === hit && now - this.lastClick.t < 350;
     this.lastClick = { e: hit, t: now };
-    if (!hit) { if (!shift) this.select([]); return; }
+    if (!hit) {
+      // nothing of anyone's there: show what is left in the trees or the seam under the pointer
+      const r = Renderer.pickResource(sx, sy);
+      if (r) { this.selection = []; this.selectedRes = r; this.buildMenu = false; this.mode = null; UI.selDirty = UI.cmdDirty = true; UI.hideTip(); Sfx.play('select'); return; }
+      if (!shift) this.select([]);
+      return;
+    }
     if ((ctrl || dbl) && hit.kind === 'unit' && hit.owner === this.human) { this.select(this.units.filter((x) => x.owner === this.human && x.type === hit.type && x.sx != null && x.sx >= 0 && x.sx <= Renderer.W && x.sy >= 0 && x.sy <= Renderer.H)); return; }
     if (shift && hit.owner === this.human && hit.kind === 'unit' && this.selection.every((s) => s.kind === 'unit')) { const i = this.selection.indexOf(hit); const list = this.selection.slice(); if (i >= 0) list.splice(i, 1); else list.push(hit); this.select(list); return; }
     this.select([hit]);
@@ -207,9 +213,15 @@ const Game = {
   /* Give each unit its own destination tile around the target. */
   spread(units, tx, ty, type) {
     if (!units.length) return;
-    const taken = new Set(); const tiles = [];
-    const r = Math.ceil(Math.sqrt(units.length)) + 2;
-    for (let d = 0; d <= r && tiles.length < units.length; d++) for (let x = tx - d; x <= tx + d && tiles.length < units.length; x++) for (let y = ty - d; y <= ty + d; y++) { if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== d) continue; const key = x + ',' + y; if (taken.has(key) || !World.passable(x, y, this.human)) continue; taken.add(key); tiles.push([x, y]); if (tiles.length >= units.length) break; }
+    // Every unit gets its own tile. Handing two of them the same one leaves them shoving each other over it
+    // for as long as they live, so the ring keeps widening until there are enough to go round.
+    const taken = new Set(), tiles = [];
+    const maxR = Math.ceil(Math.sqrt(units.length)) + 8;
+    for (let d = 0; d <= maxR && tiles.length < units.length; d++) for (let x = tx - d; x <= tx + d; x++) for (let y = ty - d; y <= ty + d; y++) {
+      if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== d) continue;
+      const key = x + ',' + y; if (taken.has(key) || !World.passable(x, y, this.human)) continue;
+      taken.add(key); tiles.push([x, y]);
+    }
     if (!tiles.length) { UI.toast("Can't go there"); Sfx.play('error'); return; }
     const sorted = units.slice().sort((a, b) => U.dist2(a.x, a.y, tx, ty) - U.dist2(b.x, b.y, tx, ty));
     sorted.forEach((u, i) => { const t = tiles[Math.min(i, tiles.length - 1)]; Sim.setOrder(u, { type, x: t[0], y: t[1] }); });
@@ -290,6 +302,7 @@ const Game = {
   updateHover(sx, sy) {
     if (!this.running) return;
     const u = Renderer.pickUnit(sx, sy), b = u ? null : Renderer.pickBuilding(sx, sy), r = u || b ? null : Renderer.pickResource(sx, sy);
+    Renderer.hoverRes = r || null;
     const haveUnits = this.selection.some((s) => s.kind === 'unit' && s.owner === this.human);
     const cv = Renderer.canvas;
     let cur = 'default';

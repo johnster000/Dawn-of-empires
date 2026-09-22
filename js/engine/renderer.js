@@ -3,7 +3,7 @@
 const Renderer = {
   canvas: null, g: null, W: 0, H: 0, dpr: 1,
   cam: { x: 0, y: 0, zoom: 1 }, ZOOMS: [0.45, 0.56, 0.7, 0.85, 1, 1.25, 1.55, 1.9], minZoom: 0.45, maxZoom: 1.9,
-  time: 0, hover: null, ghost: null, selBox: null,
+  time: 0, hover: null, hoverRes: null, ghost: null, selBox: null,
   tileColor: null, tileDeco: null, terrainTex: null, fogTex: null, fogDirty: true, sprites: new Map(), view: null,
   mini: null, mg: null, miniTerrain: null, miniFog: null, miniT: 0,
 
@@ -248,7 +248,25 @@ const Renderer = {
       if (this.sprites.size > 500) this.sprites.clear();
     }
     const [sx, sy] = this.toScreen(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
+    // picked out under the pointer, and ringed while selected
+    const sel = Game.selectedRes === r, hov = this.hoverRes === r;
+    if (sel || hov) {
+      this.at(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
+      this.g.lineWidth = sel ? 1.6 : 1.2;
+      this.ell(0, 1, 13, 6.5, sel ? 'rgba(232,196,106,0.16)' : null, sel ? '#f4e2a0' : 'rgba(244,226,160,0.55)');
+    }
     this.stamp(sp, sx, sy);
+    if (sel || hov) this.stamp(sp, sx, sy, sel ? 0.26 : 0.14);
+  },
+  /* A small picture of a resource for the selection panel. */
+  resPortrait(kind, size) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = size * 2; cv.style.width = cv.style.height = size + 'px';
+    const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
+    const k = kind === 'tree' ? size / 58 : size / 32;
+    this.g = cv.getContext('2d'); this.dpr = 2; this.cam = { x: 0, y: 0, zoom: k }; this.W = size; this.H = size * 1.75;
+    this.drawResourceVector({ kind: kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: 0.5, amount: 1, max: 1 });
+    this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
+    return cv;
   },
   drawResourceVector(r) {
     const g = this.g, T = World.T;
@@ -405,10 +423,12 @@ const Renderer = {
     }
     g.putImageData(img, 0, 0);
   },
-  stamp(sp, sx, sy) {
+  stamp(sp, sx, sy, glow) {
     const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
     g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = false;
+    if (glow) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = glow; }
     g.drawImage(sp.cv, Math.round(sx * dpr - sp.ax * sc), Math.round(sy * dpr - sp.ay * sc), Math.round(sp.cv.width * sc), Math.round(sp.cv.height * sc));
+    if (glow) { g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; }
   },
   zq(z) { const Z = this.ZOOMS; let i = 0; for (let k = 0; k < Z.length; k++) if (Math.abs(Z[k] - z) < Math.abs(Z[i] - z)) i = k; return Z[i]; },
   footShadow(b) {
@@ -927,10 +947,12 @@ const Renderer = {
   /* ---- minimap: a diamond of the whole map with entities and the camera frame ---- */
   drawMinimap() {
     const mg = this.mg, mc = this.mini, w = World.w, h = World.h;
-    const size = mc.clientWidth || 180; if (mc.width !== size * 2) { mc.width = size * 2; mc.height = size * 2; }
+    // the diamond is 2:1 like the world view, so the frame is too: a square one leaves half of it empty
+    const wpx = mc.clientWidth || 180, hpx = mc.clientHeight || Math.round(wpx / 2);
+    if (mc.width !== wpx * 2 || mc.height !== hpx * 2) { mc.width = wpx * 2; mc.height = hpx * 2; }
     const S = mc.width;
-    mg.setTransform(1, 0, 0, 1, 0, 0); mg.clearRect(0, 0, S, S);
-    mg.fillStyle = '#0e0b12'; mg.fillRect(0, 0, S, S);
+    mg.setTransform(1, 0, 0, 1, 0, 0); mg.clearRect(0, 0, mc.width, mc.height);
+    mg.fillStyle = '#0e0b12'; mg.fillRect(0, 0, mc.width, mc.height);
     if (this.fogDirty && !Game.settings.reveal) this.updateFogTex();
     // diamond transform: world (x, y) -> minimap
     const k = S / (w + h);

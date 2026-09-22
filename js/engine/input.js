@@ -4,11 +4,27 @@ const Input = {
   touches: new Map(), pinch: null, lastTap: 0, edgePan: false,
   init(el) {
     this.el = el;
-    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('contextmenu', (e) => { if (this.overGame(e)) e.preventDefault(); }, { capture: true });
+    window.addEventListener('mousedown', (e) => { if (e.button === 2 && this.overGame(e) && e.target !== el) this.onDown(e); }, { capture: true });
     el.addEventListener('mousedown', (e) => this.onDown(e));
     window.addEventListener('mousemove', (e) => this.onMove(e));
     window.addEventListener('mouseup', (e) => this.onUp(e));
-    el.addEventListener('wheel', (e) => { e.preventDefault(); Renderer.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.offsetX, e.offsetY); }, { passive: false });
+    // The wheel and the middle button are handled on the window, not the canvas: the interface panels cover a
+    // good part of the screen, and an event that lands on one of them never reaches the canvas at all.
+    window.addEventListener('wheel', (e) => {
+      if (!this.overGame(e) || !e.deltaY) return;
+      e.preventDefault();
+      this.wheelAcc = (this.wheelAcc || 0) + (e.deltaMode === 1 ? e.deltaY * 20 : e.deltaY);
+      if (Math.abs(this.wheelAcc) < 24) return;                    // a trackpad sends many small steps
+      const [x, y] = this.pos(e); Renderer.zoomAt(this.wheelAcc < 0 ? 1.12 : 1 / 1.12, x, y); this.wheelAcc = 0;
+    }, { passive: false, capture: true });
+    window.addEventListener('mousedown', (e) => {
+      if (e.button !== 1 || !this.overGame(e)) return;
+      e.preventDefault();                                          // stops the browser's autoscroll taking over
+      const [x, y] = this.pos(e); const m = this.mouse;
+      m.down = true; m.button = 1; m.panning = true; m.x = x; m.y = y; m.sx = x; m.sy = y; m.dragging = false;
+    }, { capture: true });
+    window.addEventListener('auxclick', (e) => { if (e.button === 1 && this.overGame(e)) e.preventDefault(); }, { capture: true });
     el.addEventListener('mouseleave', () => { Renderer.hover = null; });
     window.addEventListener('keydown', (e) => this.onKey(e, true));
     window.addEventListener('keyup', (e) => this.onKey(e, false));
@@ -18,12 +34,20 @@ const Input = {
     el.addEventListener('touchcancel', (e) => this.onTouch(e, 'end'), { passive: false });
   },
   pos(e) { const r = this.el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; },
+  /* Is this event over the playing area, rather than a menu screen or a text box that needs the wheel itself? */
+  overGame(e) {
+    if (!Game.running || Game.paused) return false;
+    const t = e.target;
+    if (!t || !t.closest) return true;
+    if (t.closest('.screen')) return false;
+    return t.tagName !== 'SELECT' && t.tagName !== 'TEXTAREA' && t.tagName !== 'INPUT';
+  },
   onDown(e) {
     if (!Game.running) return;
     Sfx.init(); Sfx.resume();
     const [x, y] = this.pos(e); const m = this.mouse;
     m.down = true; m.button = e.button; m.sx = x; m.sy = y; m.x = x; m.y = y; m.dragging = false;
-    if (e.button === 1 || (e.button === 0 && this.keys[' '])) { m.panning = true; e.preventDefault(); return; }
+    if (e.button === 0 && this.keys[' ']) { m.panning = true; e.preventDefault(); return; }
     if (e.button === 0 && Game.placing) { if (Game.placing.wall) Game.beginWall(x, y); else Game.placeAt(x, y, e.shiftKey); return; }
     if (e.button === 2) {
       if (Game.placing) { Game.cancelPlacing(); return; }

@@ -34,4 +34,4 @@ const TERRAINS = {
   },
 };
 
-const MAP_SIZES = { small: { w: 64, h: 64, name: 'Small' }, medium: { w: 88, h: 88, name: 'Medium' }, large: { w: 112, h: 112, name: 'Large' } };
+const MAP_SIZES = { small: { w: 64, h: 64, name: 'Small' }, medium: { w: 88, h: 88, name: 'Medium' }, large: { w: 112, h: 112, name: 'Large' }, huge: { w: 144, h: 144, name: 'Extra large' } };
