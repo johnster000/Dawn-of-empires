@@ -21,6 +21,9 @@ phones and tablets (tap, drag, pinch).
   palisade and stone walls with gates that only your own people can pass.
 - **Garrisons** — villagers and foot soldiers shelter inside the Town Hall, towers and keeps, which then shoot more
   arrows. The Town Bell pulls every villager in and sends them back to work afterwards.
+- **Villagers look after themselves** — they run from soldiers, take cover in the nearest building with room, and go
+  back to the job they left once the danger passes. Send a crowd at one tree and they spread over the stand around it
+  rather than queueing on one tile.
 - **Saving** — autosave every minute, Continue from the title screen, and text export/import to move a match between
   devices.
 - **8 units** — Villager, Spearman, Swordsman, Archer, Crossbowman, Horseman, Knight and Catapult, with a

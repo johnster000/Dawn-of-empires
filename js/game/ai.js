@@ -97,7 +97,7 @@ const AI = {
     // something already serviced by a drop-off
     let r = null, bd = Infinity;
     for (const rr of World.res) { if (!kinds.includes(rr.kind) || rr.amount <= 0) continue; if ((rr.workers || 0) >= (rr.kind === 'tree' ? 2 : 5)) continue; if (!nearDrop(rr)) continue; const d = U.dist2(rr.x, rr.y, u.x, u.y); if (d < bd) { bd = d; r = rr; } }
-    if (r) { Sim.setOrder(u, { type: 'gather', res: r }); return true; }
+    if (r && Sim.assignGather(u, r, null, 12)) return true;
     if (kind === 'food') {
       const farm = Sim.freeFarm(u, 40); if (farm) { Sim.setOrder(u, { type: 'gather', res: farm }); return true; }
       const pendingFarm = p.buildings('farm').find((b) => !b.built);
@@ -113,9 +113,9 @@ const AI = {
     const campType = kind === 'wood' ? 'lumbercamp' : 'miningcamp';
     const pending = p.buildings(campType).find((b) => !b.built && U.dist(b.x, b.y, far.x, far.y) < 10);
     if (pending) { Sim.setOrder(u, { type: 'build', bld: pending }); return true; }
-    if (Math.sqrt(bd) <= 10 && drops.length) { Sim.setOrder(u, { type: 'gather', res: far }); return true; }
+    if (Math.sqrt(bd) <= 10 && drops.length && Sim.assignGather(u, far, null, 12)) return true;
     if (p.canAfford(BUILDINGS[campType].cost) && p.buildings(campType).filter((b) => !b.built).length === 0) { if (AI.placeNear(p, campType, { x: far.x + 0.5, y: far.y + 0.5 }, [u], 2)) return true; }
-    Sim.setOrder(u, { type: 'gather', res: far }); return true; // long walk, but better than idling
+    return Sim.assignGather(u, far, null, 14); // long walk, but better than idling
   },
 
   /* ---- construction ---- */

@@ -63,7 +63,18 @@ Two different registers, on purpose:
 - Idle soldiers acquire targets within sight. Attack-move engages anything met en route and then resumes.
 - Towers and Keeps shoot the nearest enemy unit in range; Fletching upgrades extend them.
 - A player is defeated when they hold no buildings and no villagers. A finished Monument wins after 5 minutes.
-- Units never overlap: each tick, overlapping units are nudged apart (busy units hold their ground).
+- Units never overlap: each tick, overlapping units are nudged apart (busy units hold their ground, walkers are also
+  pushed sideways so crowds slide past each other instead of jamming head-on).
+- Gathering uses claimed standing spots. A resource can only be worked from the passable tiles around it; each worker
+  claims one, and when a resource has none free the worker is sent to the nearest one of its kind that does. Sending
+  ten villagers at one tree therefore spreads them over the nearby stand instead of piling them on a single tile.
+- Every unit carries a jam watchdog: no movement for 1.2 s re-routes it, and continued failure sends it to another
+  target (a different tree, or whatever structure blocks its path).
+- Pathing: an 8-way A* on reusable typed arrays, with a straight-line shortcut for hops of up to three tiles and a
+  per-tick budget of full searches (past it a unit gets a shallow best-effort route and refines it later).
+- Villagers flee soldiers within five tiles: into a garrisonable building if one is no further off than the threat,
+  otherwise eight tiles directly away. They return to the exact job they left once five seconds pass with no soldier
+  near. Shelter taken this way empties itself when the danger passes; shelter taken by the bell waits for the bell.
 - Walls: palisade (250 hp, 4 wood) and stone (900 hp, 5 stone), placed as straight runs. Gates are passable only for
   their owner and can replace an existing wall piece. An attacker whose path is blocked switches to the nearest
   enemy structure in reach, then returns to its original target.
@@ -94,14 +105,13 @@ Two different registers, on purpose:
 ## Roadmap
 Things deliberately left out of the first release, roughly in the order they should land:
 
-1. **Villager safety** — flee from soldiers when caught in the open.
-2. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
-3. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
-4. **Market** — trade one resource for another, tribute to allies.
-5. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
-6. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
-7. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
-8. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
+1. **Formations and stances** — line/box formation on move, aggressive/defensive/stand-ground, patrol.
+2. **More units** — a Dawn Age scout, a healer/monk line, a ram for early sieges, an Empire Age elite per line.
+3. **Market** — trade one resource for another, tribute to allies.
+4. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
+5. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
+6. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
+7. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
 
 ## What is original here
 Names (Dawn/Hearth/Forge/Empire ages, Hall of Scholars, Keep, Monument), all art, sounds, text, balance and code are

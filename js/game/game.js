@@ -21,7 +21,7 @@ const Game = {
     this.seed = s.forceSeed != null ? s.forceSeed : s.seedText ? RNG.seedFrom(s.seedText) : (Math.random() * 4294967295) >>> 0;
     delete s.forceSeed;
     s.seed = this.seed;
-    this.units = []; this.buildings = []; this.effects = []; this.selection = []; this.groups = {}; this.players = [];
+    this.units = []; this.buildings = []; this.effects = []; this.selection = []; this.groups = {}; this.players = []; Sim.claims.clear();
     this.time = 0; this.acc = 0; this.saveT = 0; this.over = false; this.paused = false; this.placing = null; this.mode = null; this.buildMenu = false; this.idleIdx = 0; this.alertT = -99;
     Ent.nextId = 1; UI.iconCache.clear(); UI.log.forEach((m) => m.el.remove()); UI.log = []; UI.lastRes = {};
     const startRes = { low: { food: 100, wood: 100, stone: 50, gold: 50 }, normal: { food: 200, wood: 200, stone: 100, gold: 100 }, high: { food: 600, wood: 600, stone: 300, gold: 300 }, huge: { food: 2000, wood: 2000, stone: 1000, gold: 1000 } }[s.resources];
@@ -76,6 +76,7 @@ const Game = {
   },
   tick(dt) {
     this.time += dt;
+    Sim.refreshLists(dt);
     for (const u of this.units) Sim.tickUnit(u, dt);
     Sim.separate();
     for (const b of this.buildings) Sim.tickBuilding(b, dt);
@@ -194,9 +195,11 @@ const Game = {
       this.spread(units, tx, ty, 'move'); Sfx.play('ack'); this.ping(t.x, t.y); return;
     }
     if (t.res && vill.length) {
-      // spread villagers over neighbouring resources of the same kind so they do not queue on one tree
-      const used = new Set([t.res]); let k = 0;
-      for (const u of vill) { let r = t.res; if (k++ > 0 && t.res.kind === 'tree') { const alt = World.nearestResource('tree', t.res.x + 0.5, t.res.y + 0.5, 3, (x) => !used.has(x)); if (alt) { r = alt; used.add(alt); } } Sim.setOrder(u, { type: 'gather', res: r }); }
+      // each one claims its own place to stand; when this resource is full they spill onto the nearest of its kind
+      let sent = 0;
+      for (const u of vill.slice().sort((a, b) => U.dist2(a.x, a.y, t.res.x, t.res.y) - U.dist2(b.x, b.y, t.res.x, t.res.y))) if (Sim.assignGather(u, t.res, null, 14)) sent++;
+      if (!sent) { UI.toast('No room to work there'); Sfx.play('error'); return; }
+      if (sent < vill.length) UI.toast(`${sent} of ${vill.length} could reach it`);
       this.spread(mil, tx, ty, 'move'); Sfx.play('ack'); this.ping(t.res.x + 0.5, t.res.y + 0.5); return;
     }
     this.spread(units, tx, ty, 'move'); this.ping(t.x, t.y); Sfx.play('ack');

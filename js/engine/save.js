@@ -15,11 +15,12 @@ const Save = {
     if (!o) return null;
     const d = { type: o.type };
     if (o.phase) d.phase = o.phase; if (o.x != null) { d.x = o.x; d.y = o.y; }
+    if (o.spot) d.spot = o.spot; if (o.since != null) d.since = o.since;
     if (o.res !== undefined) d.res = this.refRes(o.res); if (o.bld) d.bld = o.bld.id; if (o.target) d.target = this.ref(o.target); if (o.dropoff) d.dropoff = o.dropoff.id;
-    if (o.resume) d.resume = this.order(o.resume); if (o.after) d.after = this.ref(o.after); if (o.prev) d.prev = this.order(o.prev); if (o.then) d.then = this.order(o.then);
+    if (o.flee) d.flee = 1; if (o.resume) d.resume = this.order(o.resume); if (o.after) d.after = this.ref(o.after); if (o.prev) d.prev = this.order(o.prev); if (o.then) d.then = this.order(o.then);
     return d;
   },
-  unit(u) { return { id: u.id, type: u.type, owner: u.owner, x: +u.x.toFixed(3), y: +u.y.toFixed(3), hp: Math.round(u.hp * 10) / 10, face: +u.face.toFixed(2), cd: +u.cd.toFixed(2), anim: +u.anim.toFixed(2), carry: u.carry.amt > 0 ? { kind: u.carry.kind, amt: +u.carry.amt.toFixed(2) } : null, order: this.order(u.order), prev: this.order(u.prevOrder) }; },
+  unit(u) { return { id: u.id, type: u.type, owner: u.owner, x: +u.x.toFixed(3), y: +u.y.toFixed(3), hp: Math.round(u.hp * 10) / 10, face: +u.face.toFixed(2), cd: +u.cd.toFixed(2), anim: +u.anim.toFixed(2), carry: u.carry.amt > 0 ? { kind: u.carry.kind, amt: +u.carry.amt.toFixed(2) } : null, fled: u.fled || undefined, order: this.order(u.order), prev: this.order(u.prevOrder) }; },
   building(b) { return { id: b.id, type: b.type, owner: b.owner, tx: b.tx, ty: b.ty, hp: Math.round(b.hp), built: b.built, progress: +b.progress.toFixed(4), queue: b.queue, qt: +b.qt.toFixed(2), rally: b.rally ? { x: b.rally.x, y: b.rally.y, res: this.refRes(b.rally.res), bld: b.rally.bld ? b.rally.bld.id : null } : null, cd: +b.cd.toFixed(2), worker: b.worker && !b.worker.dead ? b.worker.id : null, monumentT: Math.round(b.monumentT), ageVisual: b.ageVisual, bell: !!b.bell, garrison: b.garrison.map((u) => this.unit(u)) }; },
   rle(arr) { const out = []; let v = 0, n = 0; for (let i = 0; i < arr.length; i++) { if (arr[i] === v) n++; else { out.push(n); v = arr[i]; n = 1; } } out.push(n); return out; },
   unrle(runs, len) { const a = new Uint8Array(len); let i = 0, v = 0; for (const n of runs) { if (v) a.fill(1, i, i + n); i += n; v ^= 1; } return a; },
@@ -57,7 +58,7 @@ const Save = {
     for (const ud of d.units) { const u = this.makeUnit(ud); Game.units.push(u); uById.set(u.id, u); pending.push([u, ud]); }
     const res = (ref) => (!ref ? null : ref.r != null ? resById.get(ref.r) || null : bById.get(ref.b) || null);
     const ent = (ref) => (!ref ? null : ref.u != null ? uById.get(ref.u) || null : bById.get(ref.b) || null);
-    const order = (od) => { if (!od) return null; const o = { type: od.type }; if (od.phase) o.phase = od.phase; if (od.x != null) { o.x = od.x; o.y = od.y; } if (od.res !== undefined) o.res = res(od.res); if (od.bld) o.bld = bById.get(od.bld) || null; if (od.target) o.target = ent(od.target); if (od.dropoff) o.dropoff = bById.get(od.dropoff) || null; if (od.resume) o.resume = order(od.resume); if (od.after) o.after = ent(od.after); if (od.prev) o.prev = order(od.prev); if (od.then) o.then = order(od.then); return o; };
+    const order = (od) => { if (!od) return null; const o = { type: od.type }; if (od.phase) o.phase = od.phase; if (od.x != null) { o.x = od.x; o.y = od.y; } if (od.spot) o.spot = od.spot; if (od.since != null) o.since = od.since; if (od.flee) o.flee = true; if (od.res !== undefined) o.res = res(od.res); if (od.bld) o.bld = bById.get(od.bld) || null; if (od.target) o.target = ent(od.target); if (od.dropoff) o.dropoff = bById.get(od.dropoff) || null; if (od.resume) o.resume = order(od.resume); if (od.after) o.after = ent(od.after); if (od.prev) o.prev = order(od.prev); if (od.then) o.then = order(od.then); return o; };
     for (const [e, ed] of pending) {
       if (e.kind === 'unit') {
         e.order = order(ed.order); e.prevOrder = order(ed.prev);
@@ -73,6 +74,7 @@ const Save = {
     Ent.nextId = Math.max(d.nextId, ...[...uById.keys(), ...bById.keys()].map((x) => x + 1), 1);
     Game.time = d.time; Game.alertT = d.alertT == null ? -99 : d.alertT;
     if (d.world.explored) World.explored = this.unrle(d.world.explored, World.w * World.h);
+    Sim.rebuildClaims();
     World.updateFog(Game.human, Game.settings.reveal); Renderer.fogDirty = true;
     if (d.cam) { Renderer.cam.zoom = Renderer.zq(d.cam.zoom); Renderer.centerOn(d.cam.x, d.cam.y); }
     UI.iconCache.clear(); UI.selDirty = UI.cmdDirty = true;
@@ -83,6 +85,7 @@ const Save = {
     const u = Ent.unit(ud.type, ud.owner, ud.x, ud.y);
     u.id = ud.id; u.face = ud.face || 0; u.cd = ud.cd || 0; u.anim = ud.anim || 0;
     if (ud.carry) u.carry = { kind: ud.carry.kind, amt: ud.carry.amt };
+    if (ud.fled) u.fled = true;
     Sim.refreshUnit(u); u.hp = Math.min(u.maxHp, ud.hp);
     return u;
   },

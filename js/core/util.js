@@ -25,47 +25,61 @@ const U = {
   astar(sx, sy, gx, gy, w, h, passable, maxNodes) {
     maxNodes = maxNodes || 6000;
     if (sx === gx && sy === gy) return [];
-    const idx = (x, y) => y * w + x;
+    const n = w * h;
+    // Scratch buffers are kept between searches and marked with a run number, so nothing has to be cleared.
+    if (!U._as || U._as.n < n) U._as = { n, g: new Float32Array(n), came: new Int32Array(n), seen: new Int32Array(n), shut: new Int32Array(n), gen: 0 };
+    const A = U._as, G = A.g, CAME = A.came, SEEN = A.seen, SHUT = A.shut, gen = ++A.gen;
     const open = new BinaryHeap();
-    const gScore = new Map(), came = new Map(), closed = new Set();
     const hFn = (x, y) => { const dx = Math.abs(x - gx), dy = Math.abs(y - gy); return Math.max(dx, dy) + 0.4142 * Math.min(dx, dy); };
-    const start = idx(sx, sy);
-    gScore.set(start, 0);
+    const start = sy * w + sx;
+    G[start] = 0; SEEN[start] = gen; CAME[start] = -1;
     open.push({ i: start, x: sx, y: sy, f: hFn(sx, sy) });
-    let best = { i: start, x: sx, y: sy, h: hFn(sx, sy) };
-    let n = 0;
-    while (open.size() && n++ < maxNodes) {
+    let best = start, bestH = hFn(sx, sy), count = 0;
+    while (open.size() && count++ < maxNodes) {
       const cur = open.pop();
-      if (closed.has(cur.i)) continue;
-      if (cur.x === gx && cur.y === gy) { best = cur; break; }
-      closed.add(cur.i);
+      if (SHUT[cur.i] === gen) continue;
+      if (cur.x === gx && cur.y === gy) { best = cur.i; bestH = -1; break; }
+      SHUT[cur.i] = gen;
       const ch = hFn(cur.x, cur.y);
-      if (ch < best.h) best = { i: cur.i, x: cur.x, y: cur.y, h: ch };
-      const g0 = gScore.get(cur.i);
+      if (ch < bestH) { bestH = ch; best = cur.i; }
+      const g0 = G[cur.i];
       for (let d = 0; d < 8; d++) {
         const dx = U.DIRS[d][0], dy = U.DIRS[d][1];
         const nx = cur.x + dx, ny = cur.y + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-        const ni = idx(nx, ny);
-        if (closed.has(ni)) continue;
+        const ni = ny * w + nx;
+        if (SHUT[ni] === gen) continue;
         const goal = nx === gx && ny === gy;
         if (!goal && !passable(nx, ny)) continue;
         if (dx && dy && (!passable(cur.x + dx, cur.y) || !passable(cur.x, cur.y + dy))) continue;
         const g = g0 + (dx && dy ? 1.4142 : 1);
-        if (g < (gScore.get(ni) ?? Infinity)) {
-          gScore.set(ni, g); came.set(ni, cur.i);
+        if (SEEN[ni] !== gen || g < G[ni]) {
+          SEEN[ni] = gen; G[ni] = g; CAME[ni] = cur.i;
           open.push({ i: ni, x: nx, y: ny, f: g + hFn(nx, ny) });
         }
       }
     }
-    if (best.i === start) return null;
+    if (best === start) return null;
     const path = [];
-    let c = best.i;
-    while (c !== start) { path.push([c % w, Math.floor(c / w)]); c = came.get(c); }
+    for (let c = best; c !== start && c >= 0; c = CAME[c]) path.push([c % w, (c / w) | 0]);
     path.reverse();
-    return path;
+    return path.length ? path : null;
   },
   DIRS: [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]],
+
+  /* A short straight walk between two tiles, or null if anything blocks it. Lets a unit take a step or two without
+     paying for a full search, which is most of what walking units actually ask for. */
+  walkLine(sx, sy, gx, gy, passable, maxSteps) {
+    const out = []; let x = sx, y = sy;
+    for (let i = 0; i < maxSteps; i++) {
+      if (x === gx && y === gy) return out;
+      const dx = U.sign(gx - x), dy = U.sign(gy - y), nx = x + dx, ny = y + dy;
+      if (!passable(nx, ny)) return null;
+      if (dx && dy && (!passable(x + dx, y) || !passable(x, y + dy))) return null;
+      out.push([nx, ny]); x = nx; y = ny;
+    }
+    return x === gx && y === gy ? out : null;
+  },
 
   /* Spiral search for the nearest tile satisfying pred, within radius r. */
   nearestTile(cx, cy, r, pred) {

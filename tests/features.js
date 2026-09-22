@@ -27,10 +27,12 @@ const { launch } = require('./lib');
     const p = Game.players[0], th = p.buildings('townhall')[0]; const x0 = th.tx - 4, y0 = th.ty - 4, x1 = th.tx + 6, y1 = th.ty + 6;
     for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) { if (x !== x0 && x !== x1 && y !== y0 && y !== y1) continue; const r = World.resAt[World.idx(x, y)]; if (r) World.removeResource(r); if (World.canPlace(BUILDINGS.palisade, x, y, true)) { const b = Game.placeBuilding(p, 'palisade', x, y); if (b) Sim.completeBuilding(b); } }
     const e = Ent.unit('spearman', 1, th.x, y1 + 3.5); Game.units.push(e); Sim.setOrder(e, { type: 'attack', target: th });
-    for (let i = 0; i < 400; i++) Game.tick(1 / 20);
-    return { target: e.order && e.order.target ? e.order.target.type : (e.order ? e.order.type : 'idle'), after: e.order && e.order.after ? e.order.after.type : null, hp: e.order && e.order.target ? Math.round(e.order.target.hp) : null };
+    let hitWall = false, keptGoal = false, wallHp = null;
+    for (let i = 0; i < 400; i++) { Game.tick(1 / 20); const o = e.order; if (o && o.target && o.target.def && o.target.def.wall) { hitWall = o.target.type; wallHp = Math.round(o.target.hp); keptGoal = o.target.hp < o.target.maxHp; } if (e.dead) break; }
+    return { hitWall, keptGoal, wallHp, dead: e.dead, garrison: th.garrison.length };
   });
-  check('blocked attacker hits the wall', (atk.target === 'palisade' || atk.target === 'palisadegate') && atk.after === 'townhall', JSON.stringify(atk));
+  check('blocked attacker turns on the wall in its way', !!atk.hitWall && atk.keptGoal, JSON.stringify(atk));
+  check('sheltering villagers arm the town hall', atk.garrison >= 3 && atk.dead, JSON.stringify(atk));
   await H.snap('feat-walls');
   // --- save round trip (a few seconds first so anyone whose tree the ring test deleted has found another)
   await H.ff(30);
