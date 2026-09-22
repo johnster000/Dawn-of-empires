@@ -17,7 +17,7 @@ const UI = {
     $('btn-modal-import').onclick = () => { const r = Save.importText($('modal-text').value); if (r.error) { this.toast(r.error); Sfx.play('error'); return; } this.els.modal.hidden = true; this.showScreen(null); this.message(`Imported: ${r.meta.age}, ${r.meta.time} played.`, 'good'); };
     $('btn-howto').onclick = () => { Sfx.play('ui'); this.showHowTo(false); };
     $('btn-howto-back').onclick = () => { Sfx.play('ui'); if (Game.running) { this.showScreen(null); } else this.showScreen('title'); };
-    $('btn-sound').onclick = () => { Sfx.init(); Sfx.setEnabled(!Sfx.enabled); this.syncSound(); try { localStorage.setItem('doe-sound', Sfx.enabled ? '1' : '0'); } catch (e) {} };
+    $('btn-sound').onclick = () => { Sfx.init(); Sfx.setEnabled(!Sfx.enabled); this.syncSound(); try { localStorage.setItem('anvil-sound', Sfx.enabled ? '1' : '0'); } catch (e) {} };
     $('btn-begin').onclick = () => { Sfx.init(); Sfx.resume(); Sfx.play('ui'); Game.newGame(this.readSetup()); };
     $('btn-setup-back').onclick = () => { Sfx.play('ui'); this.showScreen('title'); };
     $('btn-random-seed').onclick = () => { $('set-seed').value = Math.floor(Math.random() * 1e9).toString(36); };
@@ -44,7 +44,7 @@ const UI = {
     const coarse = () => document.body.classList.toggle('coarse', window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 560);
     coarse(); window.addEventListener('resize', coarse);
     document.addEventListener('touchstart', () => this.hideTip(), { passive: true });
-    try { if (localStorage.getItem('doe-sound') === '0') Sfx.enabled = false; } catch (e) {}
+    try { if (localStorage.getItem('anvil-sound') === '0') Sfx.enabled = false; } catch (e) {}
     this.syncSound();
     this.showScreen('title');
   },
@@ -91,7 +91,7 @@ const UI = {
     opt($('set-pop'), [[50, '50'], [100, '100'], [150, '150'], [200, '200']]);
     opt($('set-speed'), [[1, 'Normal'], [1.5, 'Fast'], [2, 'Very fast']]);
     opt($('set-color'), PLAYER_COLORS.map((c) => [c.id, c.name]));
-    let saved = null; try { saved = JSON.parse(localStorage.getItem('doe-settings') || 'null'); } catch (e) {}
+    let saved = null; try { saved = JSON.parse(localStorage.getItem('anvil-settings') || 'null'); } catch (e) {}
     const s = Object.assign({}, Game.defaults, saved || {});
     $('set-size').value = s.mapSize; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
     const blurb = () => { $('terrain-blurb').textContent = TERRAINS[$('set-terrain').value].blurb; };
@@ -100,7 +100,7 @@ const UI = {
   readSetup() {
     const $ = this.$;
     const s = { mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
-    try { localStorage.setItem('doe-settings', JSON.stringify(s)); } catch (e) {}
+    try { localStorage.setItem('anvil-settings', JSON.stringify(s)); } catch (e) {}
     return Object.assign({}, Game.defaults, s);
   },
 

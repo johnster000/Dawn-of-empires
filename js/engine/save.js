@@ -1,7 +1,7 @@
 /* Save games: one autosave slot in localStorage, plus text export/import for carrying a match between browsers.
    Everything is stored by id; the map itself is rebuilt from its seed and then overwritten with the saved state. */
 const Save = {
-  KEY: 'doe-save', VERSION: 2,
+  KEY: 'anvil-save', VERSION: 2,
   exists() { try { return !!localStorage.getItem(this.KEY); } catch (e) { return false; } },
   read() { try { return JSON.parse(localStorage.getItem(this.KEY) || 'null'); } catch (e) { return null; } },
   write(d) { try { localStorage.setItem(this.KEY, JSON.stringify(d)); return true; } catch (e) { return false; } },
@@ -38,7 +38,7 @@ const Save = {
 
   /* ---- reading ---- */
   restore(d) {
-    if (!d || d.v !== this.VERSION || !Array.isArray(d.units) || !Array.isArray(d.buildings) || !d.world) throw new Error('That is not a Dawn of Empires save.');
+    if (!d || d.v !== this.VERSION || !Array.isArray(d.units) || !Array.isArray(d.buildings) || !d.world) throw new Error('That is not a Anvil & Acre save.');
     Game.newGame(d.settings);
     // wipe the freshly generated start and rebuild from the save
     Game.units = []; Game.buildings = []; Game.selection = []; Game.effects = []; World.bld.fill(null); World.resAt.fill(null);
@@ -93,8 +93,8 @@ const Save = {
   /* ---- text export / import ---- */
   exportText() { return JSON.stringify(this.serialize()); },
   importText(text) {
-    let d; try { d = JSON.parse(String(text).trim()); } catch (e) { return { error: 'That is not a Dawn of Empires save.' }; }
-    if (!d || d.v !== this.VERSION || !Array.isArray(d.units) || !d.world) return { error: 'That is not a Dawn of Empires save.' };
+    let d; try { d = JSON.parse(String(text).trim()); } catch (e) { return { error: 'That is not a Anvil & Acre save.' }; }
+    if (!d || d.v !== this.VERSION || !Array.isArray(d.units) || !d.world) return { error: 'That is not a Anvil & Acre save.' };
     try { this.restore(d); } catch (e) { return { error: 'Could not load that save: ' + e.message }; }
     this.write(d);
     return { ok: true, meta: this.meta(d) };

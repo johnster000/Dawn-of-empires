@@ -1,4 +1,4 @@
-# Dawn of Empires
+# Anvil & Acre
 
 An isometric real-time strategy game in the classic build-up-and-conquer style. Start with a Town Hall and three
 villagers, gather food, wood, stone and gold, raise houses and workshops, climb through four ages of technology and
@@ -85,7 +85,7 @@ See `docs/DESIGN.md` for the pillars, the systems as implemented and the roadmap
 All rights reserved; see `LICENSE`. The game contains no third-party code, artwork, fonts or audio: every graphic is
 drawn procedurally at runtime and every sound is synthesized at runtime, both from original code in this repository.
 
-Dawn of Empires is an independent work by Cycle Start Studios. It is not affiliated with, endorsed by, sponsored by,
+Anvil & Acre is an independent work by Cycle Start Studios. It is not affiliated with, endorsed by, sponsored by,
 or connected to any other game, developer or publisher, and uses no trademarks of any other company. It takes the
 conventions of the real-time strategy genre, which are ideas rather than protected expression, and shares no names,
 art, text, audio or code with any other game.

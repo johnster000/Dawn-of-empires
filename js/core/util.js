@@ -1,4 +1,4 @@
-/* Dawn of Empires — small shared helpers. Everything hangs off a single global `U`. */
+/* Anvil & Acre — small shared helpers. Everything hangs off a single global `U`. */
 const U = {
   clamp(v, a, b) { return v < a ? a : v > b ? b : v; },
   lerp(a, b, t) { return a + (b - a) * t; },

@@ -1,4 +1,4 @@
-# Dawn of Empires — Design Notes
+# Anvil & Acre — Design Notes
 
 ## Elevator pitch
 A browser-native isometric real-time strategy game in the spirit of the late-nineties classics: start with a handful
@@ -114,5 +114,13 @@ Things deliberately left out of the first release, roughly in the order they sho
 7. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
 
 ## What is original here
-Names (Dawn/Hearth/Forge/Empire ages, Hall of Scholars, Keep, Monument), all art, sounds, text, balance and code are
-original. The genre conventions (villagers, drop-offs, houses, ages, unit counters) are shared by dozens of games.
+All artwork, audio, text, balance and code are original: every graphic is drawn procedurally at runtime and every
+sound is synthesized at runtime, from code in this repository. There are no third-party assets, fonts or libraries.
+
+Names are ours too: the four ages, the Hall of Scholars, the Monument, and the whole technology list. An earlier
+draft of the tech tree used sixteen names taken from another game in the genre; they were replaced in September 2026
+with original historical terms, and the matching internal ids were changed with them. Keep it that way. If a name is
+lifted from a specific game rather than from history, it is a liability even when the mechanic behind it is not.
+
+The genre conventions themselves (villagers, drop-off camps, houses, ages, unit counters, walls and gates) are ideas
+rather than protected expression, and are shared by dozens of published games.
