@@ -1,7 +1,7 @@
 /* Save games: one autosave slot in localStorage, plus text export/import for carrying a match between browsers.
    Everything is stored by id; the map itself is rebuilt from its seed and then overwritten with the saved state. */
 const Save = {
-  KEY: 'doe-save', VERSION: 1,
+  KEY: 'doe-save', VERSION: 2,
   exists() { try { return !!localStorage.getItem(this.KEY); } catch (e) { return false; } },
   read() { try { return JSON.parse(localStorage.getItem(this.KEY) || 'null'); } catch (e) { return null; } },
   write(d) { try { localStorage.setItem(this.KEY, JSON.stringify(d)); return true; } catch (e) { return false; } },

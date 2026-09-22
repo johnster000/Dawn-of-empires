@@ -36,6 +36,8 @@ h1 .of { display: inline-block; font-size: .42em; margin: 0 .35em; color: var(--
 .donate:hover, .donate:focus-visible { border-color: var(--gold2); }
 .donate.blocked { user-select: text; -webkit-user-select: text; color: var(--text); border-color: var(--muted); }
 .footer { color: var(--muted); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; margin-top: 18px; }
+.legal { color: var(--muted); opacity: .75; font-size: 11px; line-height: 1.5; max-width: 52ch; margin: 6px auto 0; text-align: center; }
+.panel .legal { text-align: left; max-width: none; margin: 14px 0 0; border-top: 1px solid rgba(90,74,48,.4); padding-top: 10px; }
 .panel { background: linear-gradient(180deg, #26202c, #1c1720); border: 1px solid var(--border); border-radius: 6px; padding: 22px 26px; width: min(560px, 94vw); box-shadow: 0 10px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05); max-height: calc(100vh - 40px); overflow-y: auto; }
 .panel.wide { width: min(960px, 94vw); }
 .panel.narrow { width: min(360px, 94vw); }

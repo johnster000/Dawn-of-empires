@@ -3,7 +3,7 @@
 const BUILDINGS = {
   townhall:   { name: 'Town Hall',    size: 3, hp: 1500, armor: 3, cost: { wood: 275, stone: 100 }, time: 120, age: 0, shape: 'hall',
                 desc: 'The heart of a settlement. Trains villagers, stores every resource and advances the age.',
-                trains: ['villager'], techs: ['loom'], dropoff: ['food', 'wood', 'stone', 'gold'], pop: 5, sight: 8, ageUp: true, garrison: 15, garrisonAttack: { dmg: 5, range: 6, rate: 1.6 } },
+                trains: ['villager'], techs: ['homespun'], dropoff: ['food', 'wood', 'stone', 'gold'], pop: 5, sight: 8, ageUp: true, garrison: 15, garrisonAttack: { dmg: 5, range: 6, rate: 1.6 } },
   house:      { name: 'House',        size: 2, hp: 250,  armor: 1, cost: { wood: 30 }, time: 25, age: 0, shape: 'house',
                 desc: 'Room for five more people.', pop: 5, sight: 3 },
   farm:       { name: 'Farm',         size: 2, hp: 120,  armor: 0, cost: { wood: 60 }, time: 20, age: 0, shape: 'farm', passable: true,
@@ -25,7 +25,7 @@ const BUILDINGS = {
   tower:      { name: 'Watchtower',   size: 1, hp: 450,  armor: 3, cost: { wood: 50, stone: 100 }, time: 40, age: 1, shape: 'tower',
                 desc: 'Sees far and shoots arrows at anything hostile in range. Garrison up to 5 for extra arrows.', sight: 9, attack: { dmg: 6, range: 6, rate: 1.6, kind: 'arrow' }, garrison: 5 },
   library:    { name: 'Hall of Scholars', size: 3, hp: 650, armor: 2, cost: { wood: 200, stone: 100 }, time: 60, age: 2, shape: 'library',
-                desc: 'Researches economic improvements.', techs: ['wheelbarrow', 'handcart', 'axes', 'saw', 'pick', 'shaft', 'crops', 'heavyplow', 'conscription'], sight: 5 },
+                desc: 'Researches economic improvements.', techs: ['yoke', 'oxcart', 'broadaxe', 'pitsaw', 'ironpick', 'galleries', 'fallow', 'mouldboard', 'muster'], sight: 5 },
   keep:       { name: 'Keep',         size: 2, hp: 1400, armor: 4, cost: { wood: 100, stone: 350 }, time: 90, age: 2, shape: 'keep',
                 desc: 'A stout stone fortification with a long reach. Garrison up to 10.', sight: 11, attack: { dmg: 14, range: 8, rate: 2.0, kind: 'arrow' }, garrison: 10 },
   workshop:   { name: 'Siege Workshop', size: 3, hp: 700, armor: 2, cost: { wood: 200, stone: 100 }, time: 60, age: 3, shape: 'workshop',

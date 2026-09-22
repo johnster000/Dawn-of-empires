@@ -213,7 +213,7 @@ const AI = {
     options.sort((a, b) => AI.techScore(p, b[1]) - AI.techScore(p, a[1]));
     Sim.enqueue(options[0][0], { kind: 'tech', id: options[0][1] });
   },
-  techScore(p, id) { const t = TECHS[id]; let s = 10 - t.age; if (t.effect.gather || t.effect.carry || t.effect.farmYield) s += p.units('villager').length >= 12 ? 4 : 1; if (t.effect.atk || t.effect.armor || t.effect.range) s += p.units().filter((u) => u.type !== 'villager').length >= 6 ? 4 : 0; if (id === 'loom') s += 3; return s; },
+  techScore(p, id) { const t = TECHS[id]; let s = 10 - t.age; if (t.effect.gather || t.effect.carry || t.effect.farmYield) s += p.units('villager').length >= 12 ? 4 : 1; if (t.effect.atk || t.effect.armor || t.effect.range) s += p.units().filter((u) => u.type !== 'villager').length >= 6 ? 4 : 0; if (id === 'homespun') s += 3; return s; },
 
   /* ---- military ---- */
   trainMilitary(p, S) {
