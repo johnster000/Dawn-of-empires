@@ -163,7 +163,11 @@ const Sim = {
   freeSpot(u, r) {
     let best = null, bd = Infinity;
     if (u.def.gather && u.def.gather.length && !u.def.gather.includes(rk(r))) return null; // boats only fish
+    const here = World.regionAt(u.x, u.y);
     for (const s of Sim.resSpots(r, u)) {
+      // not on land or water we can get to, or somewhere we recently failed to reach
+      if (here && World.regionAt(s[0], s[1]) !== here) continue;
+      if (u.noGo && u.noGo.get(Sim.key(s[0], s[1])) > Game.time) continue;
       const holder = Sim.claims.get(Sim.key(s[0], s[1]));
       if (holder && holder !== u && !holder.dead) continue;
       const d = U.dist2(s[0] + 0.5, s[1] + 0.5, u.x, u.y); if (d < bd) { bd = d; best = s; }
@@ -234,17 +238,16 @@ const Sim = {
   pathToEntity(u, e) {
     const ux = Math.floor(u.x), uy = Math.floor(u.y);
     const foot = Sim.footprint(e);
-    let goal = null, bd = Infinity;
-    if (e.def && e.def.passable) { goal = [Math.floor(e.x), Math.floor(e.y)]; }
-    else {
-      for (let x = foot.x0 - 1; x <= foot.x1 + 1; x++) for (let y = foot.y0 - 1; y <= foot.y1 + 1; y++) {
-        if (x >= foot.x0 && x <= foot.x1 && y >= foot.y0 && y <= foot.y1) continue;
-        if (!Sim.pass(u, x, y)) continue;
-        const d = U.dist2(x, y, ux, uy); if (d < bd) { bd = d; goal = [x, y]; }
-      }
+    if (e.def && e.def.passable) return Sim.pathTo(u, Math.floor(e.x), Math.floor(e.y));
+    // the nearest few tiles beside it, in order: the closest one can be boxed in while another side is open
+    const cands = [];
+    for (let x = foot.x0 - 1; x <= foot.x1 + 1; x++) for (let y = foot.y0 - 1; y <= foot.y1 + 1; y++) {
+      if (x >= foot.x0 && x <= foot.x1 && y >= foot.y0 && y <= foot.y1) continue;
+      if (Sim.pass(u, x, y)) cands.push([x, y, U.dist2(x, y, ux, uy)]);
     }
-    if (!goal) return false;
-    return Sim.pathTo(u, goal[0], goal[1]);
+    cands.sort((a, b) => a[2] - b[2]);
+    for (const [x, y] of cands.slice(0, 3)) if (Sim.pathTo(u, x, y) && u.path && (!u.path.length || (u.path[u.path.length - 1][0] === x && u.path[u.path.length - 1][1] === y) || (Math.floor(u.x) === x && Math.floor(u.y) === y))) return true;
+    return cands.length ? Sim.pathTo(u, cands[0][0], cands[0][1]) : false;
   },
   footprint(e) {
     if (e.kind === 'building') return { x0: e.tx, y0: e.ty, x1: e.tx + e.size - 1, y1: e.ty + e.size - 1 };
@@ -548,7 +551,11 @@ const Sim = {
       const there = () => (farm ? U.dist(u.x, u.y, r.x, r.y) <= 0.6 : Math.floor(u.x) === o.spot[0] && Math.floor(u.y) === o.spot[1]);
       const settle = () => { u.path = null; u.moving = false; o.phase = 'gathering'; if (!farm) { u.x = o.spot[0] + 0.5; u.y = o.spot[1] + 0.5; } u.face = Math.atan2((farm ? r.y : r.y + 0.5) - u.y, (farm ? r.x : r.x + 0.5) - u.x); };
       if (there()) { settle(); return; }
-      if (!u.path) { const ok = farm ? Sim.pathTo(u, Math.floor(r.x), Math.floor(r.y)) : Sim.pathTo(u, o.spot[0], o.spot[1]); if (!ok) { Sim.retarget(u, o); return; } }
+      if (!u.path) {
+        const ok = farm ? Sim.pathTo(u, Math.floor(r.x), Math.floor(r.y)) : Sim.pathTo(u, o.spot[0], o.spot[1]);
+        // a spot walled in by buildings is remembered for a while, so the search is not repeated every tick
+        if (!ok) { if (!farm) { (u.noGo = u.noGo || new Map()).set(Sim.key(o.spot[0], o.spot[1]), Game.time + 30); if (u.noGo.size > 24) for (const [k, t] of u.noGo) if (t <= Game.time) u.noGo.delete(k); } Sim.retarget(u, o); return; }
+      }
       const s = Sim.step(u, dt);
       if (there()) { settle(); return; }
       if (s === 'arrived') { u.path = null; u.stuck++; if (u.stuck > 2) Sim.retarget(u, o); }
@@ -628,7 +635,7 @@ const Sim = {
         if (u.stuck > 2) {
           Sim.idle(u); Game.notify(u.owner, 'Cannot reach the building site.', 'warn', b.x, b.y);
           // a bot gives up on a foundation it has walled in, and gets its materials back
-          const p = Game.players[b.owner]; if (p && p.isAI && !b.built && b.progress < 0.05) { for (const k in b.def.cost) p.res[k] += Math.round(b.def.cost[k] * (1 - b.progress)); Sim.kill(b, null); }
+          const p = Game.players[b.owner]; if (p && p.isAI && World.islands && !b.def.wall && !b.built && b.progress < 0.05) { for (const k in b.def.cost) p.res[k] += Math.round(b.def.cost[k] * (1 - b.progress)); Sim.kill(b, null); }
         }
         return;
       }

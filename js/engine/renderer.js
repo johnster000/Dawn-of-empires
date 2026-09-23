@@ -418,7 +418,7 @@ const Renderer = {
     // each shape says where its poles stand while it is drawn, so the cloth waves from the roof it belongs to
     const col = p.color.main, sh = b.def.shape;
     for (const f of sp.flags || []) this.flag(this.P(f[0], f[1], f[2]), col);
-    if (sh === 'smithy') { const c = this.P(s * 0.82, s * 0.32, 32); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(s, s * 0.25, 9); this.ell(w[0], w[1], 4, 3, `rgba(255,140,40,${0.6 + 0.3 * Math.sin(this.time * 7)})`); }
+    if (sh === 'smithy') { const c = this.P(0.65, 0.55, 52); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(0.8, 1.4, 9); this.ell(w[0], w[1], 5, 3, `rgba(255,140,40,${0.45 + 0.3 * Math.sin(this.time * 7)})`); }
   },
   /* Sprites are rasterised once, at one texel per zoom-1 pixel, whatever the zoom: changing zoom never redraws
      anything. Zoomed in they are stamped with nearest-neighbour scaling for the chunky pre-rendered look;
@@ -531,24 +531,6 @@ const Renderer = {
     // a few planks stacked beside
     g.fillStyle = '#9c7a4a'; const pl = this.P(s + 0.2, s * 0.5, 0); for (let k = 0; k < 3; k++) g.fillRect(pl[0] - 8, pl[1] - 4 - k * 3, 16, 2.5);
   },
-  shape_house(b, age, p) {
-    const s = b.size; this.box(0, 0, s, s, 0, 20, age.wall, age.wallDark, age.roof);
-    this.door(0, s * 0.5, 0, 'L', p.color.dark); this.window(s, s * 0.3, 10, 'R');
-    this.gable(0, 0, s, s, 20, 14, age.roof, age.roofDark);
-    const ch = this.P(s * 0.7, s * 0.5, 34); this.g.fillStyle = age.wallDark; this.g.fillRect(ch[0] - 2.5, ch[1] - 6, 5, 8);
-  },
-  shape_hall(b, age, p) {
-    const s = b.size, g = this.g;
-    if (b.ageVisual === 0) { this.pavilion(b, age, p); return; }
-    this.box(0, 0, s, s, 0, 26, age.wall, age.wallDark, age.roof);
-    this.door(0, s * 0.5, 0, 'L', p.color.dark); this.window(s, s * 0.35, 12, 'R'); this.window(s, s * 0.7, 12, 'R'); this.window(0, s * 0.2, 12, 'L');
-    this.gable(0, 0, s, s, 26, 18, age.roof, age.roofDark);
-    // corner turret with banner
-    this.box(s - 0.8, s - 0.8, s, s, 0, 40, age.wall, age.wallDark, age.trim);
-    const t = this.P(s - 0.4, s - 0.4, 40); this.poly([[t[0] - 12, t[1] + 4], [t[0], t[1] - 14], [t[0] + 12, t[1] + 4]], age.roofDark); this.flagSpot(s - 0.4, s - 0.4, 53);
-    // team banner on left face
-    const bn = this.P(0, s * 0.8, 18); g.fillStyle = p.color.main; g.fillRect(bn[0] - 3, bn[1] - 8, 6, 14); g.fillStyle = age.trim; g.fillRect(bn[0] - 4, bn[1] - 9, 8, 2);
-  },
   /* The first town hall: a raised deck, timber posts, a hide-and-canvas hip roof with two lean-to wings. */
   pavilion(b, age, p) {
     const s = b.size, g = this.g, P = (x, y, z) => this.P(x, y, z);
@@ -592,132 +574,6 @@ const Renderer = {
     canopyRoof(0.65, 0.65, 2.4, 2.4, 39, 16, true); this.flagSpot(1.525, 1.525, 54);
     // a small hearth in the yard
     const fh = P(2.6, 2.6, 0); this.ell(fh[0], fh[1], 4.5, 2.3, '#4a4038'); g.fillStyle = '#e07a2a'; g.fillRect(fh[0] - 1.5, fh[1] - 3, 3, 2.5); g.fillStyle = '#ffd060'; g.fillRect(fh[0] - 0.5, fh[1] - 4, 1.2, 1.5);
-  },
-  shape_barn(b, age, p) {
-    const s = b.size; this.box(0, 0, s, s, 0, 18, age.wall, age.wallDark, age.roof);
-    this.door(s, s * 0.5, 0, 'R', '#4a3320');
-    this.gable(0, 0, s, s, 18, 16, age.roof, age.roofDark);
-    // grain sacks by the wall
-    const g = this.g; const q = this.P(-0.15, s * 0.3, 0); g.fillStyle = '#c9a66b'; this.ell(q[0], q[1], 5, 3.5, '#c9a66b'); this.ell(q[0] - 7, q[1] + 3, 4.5, 3, '#b8955c');
-  },
-  shape_camp(b, age, p) {
-    const s = b.size, g = this.g;
-    // low hut in one half, stock pile in the other
-    this.box(0, 0, s * 0.55, s, 0, 14, age.wall, age.wallDark, age.roof);
-    this.gable(0, 0, s * 0.55, s, 14, 12, age.roof, age.roofDark, 0.12);
-    this.door(0, s * 0.5, 0, 'L', p.color.dark);
-    if (b.type === 'lumbercamp') {
-      for (let k = 0; k < 3; k++) for (let i = 0; i < 3 - k; i++) { const c = this.P(s * 0.8, s * 0.35 + i * 0.28 + k * 0.14, k * 5); this.ell(c[0], c[1], 6, 3.2, k % 2 ? '#8a6238' : '#9c7040', '#5a3f22'); this.ell(c[0], c[1], 3, 1.6, '#c9a26b'); }
-    } else {
-      const c = this.P(s * 0.78, s * 0.55, 0); g.fillStyle = '#6a4a2a'; g.fillRect(c[0] - 12, c[1] - 10, 24, 9); this.ell(c[0] - 7, c[1] + 1, 3.5, 3.5, '#3a2a1a'); this.ell(c[0] + 7, c[1] + 1, 3.5, 3.5, '#3a2a1a');
-      for (let i = 0; i < 5; i++) this.ell(c[0] - 8 + i * 4, c[1] - 11, 2.6, 2.2, i % 2 ? World.T.gold : World.T.rock);
-    }
-  },
-  shape_longhouse(b, age, p) {
-    const s = b.size, g = this.g;
-    this.box(0, 0.3, s, s - 0.3, 0, 22, age.wall, age.wallDark, age.roof);
-    this.door(0, s * 0.5, 0, 'L', p.color.dark); this.window(s, s * 0.3, 12, 'R'); this.window(s, s * 0.65, 12, 'R');
-    this.gable(0, 0.3, s, s - 0.3, 22, 15, age.roof, age.roofDark);
-    // shields on the near wall
-    for (let k = 0; k < 2; k++) { const w = this.P(k * 1.0 + 0.6, s, 12); this.ell(w[0], w[1], 4, 4.5, p.color.main, age.trim); }
-    // weapon rack
-    const r = this.P(s + 0.15, s * 0.4, 0); g.strokeStyle = '#5a3f22'; g.lineWidth = 1.5; g.beginPath(); for (let i = 0; i < 4; i++) { g.moveTo(r[0] + i * 4 - 6, r[1]); g.lineTo(r[0] + i * 4 - 4, r[1] - 16); } g.stroke();
-  },
-  shape_range(b, age, p) {
-    const s = b.size, g = this.g;
-    this.box(0, 0, s * 0.5, s * 0.6, 0, 18, age.wall, age.wallDark, age.roof);
-    this.gable(0, 0, s * 0.5, s * 0.6, 18, 12, age.roof, age.roofDark, 0.12);
-    this.door(0, s * 0.3, 0, 'L', p.color.dark);
-    // fenced yard with two targets
-    g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.5;
-    const f = [this.P(s, 0), this.P(s, s), this.P(0, s)]; g.beginPath(); g.moveTo(f[0][0], f[0][1]); g.lineTo(f[1][0], f[1][1]); g.lineTo(f[2][0], f[2][1]); g.stroke();
-    for (let k = 0; k < 2; k++) { const t = this.P(s * 0.85, s * 0.35 + k * 0.4, 0); this.ell(t[0], t[1] - 8, 6, 6, '#e8dcc4', '#5a3f22'); this.ell(t[0], t[1] - 8, 3.5, 3.5, p.color.main); this.ell(t[0], t[1] - 8, 1.3, 1.3, '#e8dcc4'); g.fillStyle = '#5a3f22'; g.fillRect(t[0] - 1, t[1] - 3, 2, 5); }
-  },
-  shape_stables(b, age, p) {
-    const s = b.size, g = this.g;
-    this.box(0, 0, s, s * 0.6, 0, 18, age.wall, age.wallDark, age.roof);
-    this.gable(0, 0, s, s * 0.6, 18, 12, age.roof, age.roofDark);
-    this.door(s, s * 0.3, 0, 'R', '#4a3320');
-    // paddock fence and a horse
-    g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.5; const f = [this.P(0, s * 0.6), this.P(0, s), this.P(s, s), this.P(s, s * 0.6)]; g.beginPath(); g.moveTo(f[0][0], f[0][1]); for (const q of f.slice(1)) g.lineTo(q[0], q[1]); g.stroke();
-    const hp = this.P(s * 0.45, s * 0.82, 0); this.horse(hp[0], hp[1], '#7a5a3a', p.color, 0);
-    const hay = this.P(s * 0.85, s * 0.8, 0); this.ell(hay[0], hay[1], 7, 4, '#d8b860'); this.ell(hay[0], hay[1] - 3, 5, 3, '#e8cc78');
-  },
-  shape_smithy(b, age, p) {
-    const s = b.size, g = this.g;
-    this.box(0, 0, s, s, 0, 18, age.wall, age.wallDark, U.shade(age.roofDark, -0.2));
-    this.door(s, s * 0.5, 0, 'R', '#2a1a10');
-    // chimney with smoke
-    this.box(s * 0.7, s * 0.2, s * 0.95, s * 0.45, 18, 14, age.wallDark, U.shade(age.wallDark, -0.2), '#3a3030');
-    // anvil and glow
-    this.flagSpot(s * 0.25, s * 0.25, 18);
-    const a = this.P(-0.2, s * 0.6, 0); g.fillStyle = '#3a3a40'; g.fillRect(a[0] - 6, a[1] - 6, 12, 4); g.fillRect(a[0] - 3, a[1] - 3, 6, 4);
-  },
-  shape_tower(b, age, p) {
-    const s = b.size, h = 56, g = this.g;
-    this.box(0.1, 0.1, s - 0.1, s - 0.1, 0, h, age.wall, age.wallDark, age.trim);
-    // crenellations
-    for (const [x, y] of [[0.1, 0.1], [s - 0.1, 0.1], [s - 0.1, s - 0.1], [0.1, s - 0.1], [0.5, 0.1], [0.1, 0.5], [s - 0.1, 0.5], [0.5, s - 0.1]]) this.box(x - 0.12, y - 0.12, x + 0.12, y + 0.12, h, 6, age.wall, age.wallDark, age.trim);
-    this.window(0.1, 0.5, h * 0.55, 'L'); this.window(s - 0.1, 0.5, h * 0.55, 'R');
-    this.flagSpot(s / 2, s / 2, h + 6);
-  },
-  shape_keep(b, age, p) {
-    const s = b.size, h = 46;
-    this.box(0, 0, s, s, 0, h, age.wall, age.wallDark, age.trim);
-    for (const [x, y] of [[0, 0], [s, 0], [s, s], [0, s]]) this.box(x - 0.25, y - 0.25, x + 0.25, y + 0.25, 0, h + 14, age.wall, age.wallDark, age.roofDark);
-    for (let k = 0.4; k < s; k += 0.55) { this.box(k - 0.1, -0.05, k + 0.1, 0.05, h, 5, age.wall, age.wallDark, age.trim); this.box(k - 0.1, s - 0.05, k + 0.1, s + 0.05, h, 5, age.wall, age.wallDark, age.trim); }
-    this.flagSpot(0, 0, h + 14); this.door(0, s * 0.5, 0, 'L', '#2a1a10'); this.window(s, s * 0.3, 26, 'R'); this.window(s, s * 0.7, 26, 'R'); this.window(0, s * 0.25, 26, 'L');
-  },
-  shape_library(b, age, p) {
-    const s = b.size, g = this.g;
-    this.box(0, 0, s, s, 0, 24, age.wall, age.wallDark, age.roof);
-    // columns along the left face
-    for (let k = 0.3; k < s; k += 0.6) { const c0 = this.P(0, k, 0), c1 = this.P(0, k, 24); g.strokeStyle = U.shade(age.wall, 0.25); g.lineWidth = 3; g.beginPath(); g.moveTo(c0[0] - 2, c0[1]); g.lineTo(c1[0] - 2, c1[1]); g.stroke(); }
-    // dome
-    const d = this.P(s / 2, s / 2, 24); this.ell(d[0], d[1] - 2, s * 18, s * 9, age.roofDark); this.ell(d[0], d[1] - 4, s * 16, s * 14, age.roof); this.ell(d[0] - s * 5, d[1] - s * 8, s * 6, s * 4, U.alpha('#ffffff', 0.18));
-    g.fillStyle = age.trim; g.beginPath(); g.arc(d[0], d[1] - 4 - s * 14, 3, 0, 7); g.fill(); this.flagSpot(s / 2, s / 2, 26 + s * 14);
-    this.door(0, s * 0.5, 0, 'L', '#3a2a1a');
-  },
-  shape_workshop(b, age, p) {
-    const s = b.size, g = this.g;
-    this.box(0, 0, s, s * 0.65, 0, 22, age.wall, age.wallDark, age.roof);
-    this.gable(0, 0, s, s * 0.65, 22, 14, age.roof, age.roofDark);
-    // open front with a wheel and beams
-    const w = this.P(s * 0.3, s * 0.85, 0); this.ell(w[0], w[1] - 7, 7, 7, '#5a3f22', '#3a2a1a'); this.ell(w[0], w[1] - 7, 2, 2, '#3a2a1a');
-    g.strokeStyle = '#7a5a3a'; g.lineWidth = 2.5; const bm = this.P(s * 0.75, s * 0.85, 0); g.beginPath(); g.moveTo(bm[0] - 14, bm[1]); g.lineTo(bm[0] + 14, bm[1] - 3); g.moveTo(bm[0] - 12, bm[1] - 4); g.lineTo(bm[0] + 12, bm[1] - 7); g.stroke();
-  },
-  shape_monument(b, age, p) {
-    const s = b.size;
-    const stone = '#e2dbcd', dark = '#b5ad9e';
-    this.box(0, 0, s, s, 0, 16, stone, dark, U.shade(stone, -0.05));
-    this.box(0.5, 0.5, s - 0.5, s - 0.5, 16, 16, stone, dark, U.shade(stone, -0.05));
-    this.box(1, 1, s - 1, s - 1, 32, 16, stone, dark, U.shade(stone, -0.05));
-    for (const [x, y] of [[1.3, 1.3], [s - 1.3, 1.3], [s - 1.3, s - 1.3], [1.3, s - 1.3]]) this.box(x - 0.15, y - 0.15, x + 0.15, y + 0.15, 48, 14, stone, dark, '#c9a54a');
-    const top = this.P(s / 2, s / 2, 48); this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62)], '#c9a54a');
-    this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s / 2, s / 2, 92)], '#e0c060'); this.poly([this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#b08a30'); this.poly([this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#d8b040');
-    this.flagSpot(s / 2, s / 2, 91);
-  },
-  /* A plank pier on piles with a boat shed, a hand crane and nets drying on a rack. */
-  shape_dock(b, age, p) {
-    const s = b.size, g = this.g, stone = b.ageVisual >= 2, deck = stone ? '#9a948a' : '#9c7a4a', deckD = stone ? '#6e6960' : '#6a5034';
-    // piles standing in the water, then the deck on them
-    g.strokeStyle = '#3a2a1a'; g.lineWidth = 3;
-    for (const x of [0.12, s / 2, s - 0.12]) for (const y of [0.12, s / 2, s - 0.12]) { const a = this.P(x, y, -5), c = this.P(x, y, 4); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); g.stroke(); }
-    this.box(0, 0, s, s, 3, 3, deckD, U.shade(deckD, -0.2), deck);
-    g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let k = 0.25; k < s; k += 0.25) { const a = this.P(k, 0, 6), c = this.P(k, s, 6); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); g.stroke(); }
-    // boat shed on the back half
-    this.box(0.1, 0.1, 1.0, s - 0.3, 6, 14, age.wall, age.wallDark, age.roof);
-    this.gable(0.1, 0.1, 1.0, s - 0.3, 20, 10, age.roof, age.roofDark, 0.08);
-    const d = this.P(1.0, s * 0.45, 6); g.fillStyle = '#1a1410'; g.beginPath(); g.moveTo(d[0] - 5, d[1] - 1); g.lineTo(d[0] - 5, d[1] - 10); g.quadraticCurveTo(d[0], d[1] - 15, d[0] + 5, d[1] - 12); g.lineTo(d[0] + 5, d[1] - 3); g.fill();
-    // crane at the front corner
-    const c0 = this.P(s - 0.3, s - 0.3, 6), c1 = this.P(s - 0.3, s - 0.3, 34), c2 = this.P(s + 0.1, s - 0.9, 30);
-    g.strokeStyle = '#5a3f22'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(c0[0], c0[1]); g.lineTo(c1[0], c1[1]); g.lineTo(c2[0], c2[1]); g.stroke();
-    g.strokeStyle = '#c8b89a'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(c2[0], c2[1]); g.lineTo(c2[0], c2[1] + 16); g.stroke(); g.fillStyle = '#8a6a44'; g.fillRect(c2[0] - 3, c2[1] + 15, 6, 4);
-    // net rack and a coil of rope
-    const n0 = this.P(1.3, 0.3, 6), n1 = this.P(1.8, 0.3, 6); g.strokeStyle = '#5a3f22'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(n0[0], n0[1]); g.lineTo(n0[0], n0[1] - 12); g.lineTo(n1[0], n1[1] - 12); g.lineTo(n1[0], n1[1]); g.stroke();
-    g.strokeStyle = 'rgba(220,210,180,0.75)'; g.lineWidth = 0.7; g.beginPath(); for (let k = 0; k <= 5; k++) { const t = k / 5; g.moveTo(U.lerp(n0[0], n1[0], t), U.lerp(n0[1], n1[1], t) - 12); g.lineTo(U.lerp(n0[0], n1[0], t), U.lerp(n0[1], n1[1], t) - 4); } g.stroke();
-    const r = this.P(s - 0.5, 0.5, 6); this.ell(r[0], r[1] - 1, 4, 2, '#b8a070', '#6a5a3a');
-    this.flagSpot(0.55, (s - 0.2) / 2, 29);
   },
   /* Wall pieces join up with their neighbours: a run from the middle of the square to every connected side or
      corner, so a line of pieces reads as one continuous wall, diagonals included. */
@@ -852,7 +708,7 @@ const Renderer = {
     g.globalAlpha = 0.6;
     const A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
     this.poly([A, B, C, D], ok ? 'rgba(122,201,67,0.45)' : 'rgba(216,72,74,0.45)', ok ? '#7ac943' : '#d8484a', 1.5);
-    if (ok) { const fake = { tx: gh.tx, ty: gh.ty, size: s, x: gh.tx + s / 2, y: gh.ty + s / 2, def: gh.def, type: gh.type, built: true, worker: null, owner: Game.human, mask: 0 }; const age = AGES[Game.players[Game.human].age]; this.mat = age; const fn = this['shape_' + gh.def.shape] || this.shape_house; fn.call(this, fake, age, Game.players[Game.human]); this.mat = null; }
+    if (ok) { const fake = { tx: gh.tx, ty: gh.ty, size: s, x: gh.tx + s / 2, y: gh.ty + s / 2, def: gh.def, type: gh.type, built: true, worker: null, owner: Game.human, mask: 0, ageVisual: Game.players[Game.human].age }; const age = AGES[Game.players[Game.human].age]; this.mat = age; const fn = this['shape_' + gh.def.shape] || this.shape_house; fn.call(this, fake, age, Game.players[Game.human]); this.mat = null; }
     g.globalAlpha = 1;
   },
 

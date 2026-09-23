@@ -169,7 +169,10 @@ Things deliberately left out of the first release, roughly in the order they sho
 4. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
 5. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
    (Islands shipped.)
-6. **Building redesign** — a distinct silhouette per building; proposal awaiting approval.
+6. **Building redesign** — shipped: each building has its own silhouette (bell-tower hall, round silos, open
+   lumber shed, windlass mine, drill yard, target lane, stall-door stables, fat-chimney smithy, splay-legged
+   lookout, domed portico, motte-and-turret keep, crane workshop, obelisk-court monument), drawn in
+   `js/engine/architecture.js` with openings only on the faces the viewer can see.
 7. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
 8. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
 
