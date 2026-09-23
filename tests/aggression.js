@@ -49,6 +49,20 @@ const { launch } = require('./lib');
   r = await decide();
   ok('an easy bot in the Forge Age still waits to be provoked', !r.attacking, r);
 
+  // temper from the setup screen
+  const temper = async (t, age, grudge) => { await H.page.evaluate(([t, age, grudge]) => { const p = Game.players[1]; p.difficulty = 'normal'; p.ai.D = DIFF.normal; p.ai.T = TEMPER[t]; p.grudge = grudge ? { 0: Game.time - grudge } : {}; p.age = age; }, [t, age, grudge]); await setup(); await H.page.evaluate(([age, grudge]) => { const p = Game.players[1]; p.age = age; p.grudge = grudge ? { 0: Game.time - grudge } : {}; }, [age, grudge]); return decide(); };
+  r = await temper('aggressive', 1, 0);
+  ok('an aggressive bot attacks unprovoked a whole age sooner', r.attacking && r.warlike, r);
+  r = await temper('chill', 2, 0);
+  ok('a chill bot still waits in the Forge Age', !r.attacking && !r.warlike, r);
+  await H.page.evaluate(() => { Game.time = 600; });
+  r = await temper('chill', 3, 0);
+  ok('a chill bot turns in the Empire Age', r.attacking, r);
+  r = await temper('chill', 0, 250);
+  ok('a chill bot forgets a grudge sooner', !r.attacking, r);
+  r = await temper('normal', 0, 250);
+  ok('a normal bot still remembers it', r.attacking && r.target === 0, r);
+  await H.page.evaluate(() => { Game.players[1].ai.T = TEMPER.normal; });
   // save round trip keeps grudges
   const g = await H.page.evaluate(() => { Game.players[1].grudge = { 0: Game.time }; const d = Save.serialize(); Save.restore(JSON.parse(JSON.stringify(d))); return Game.players[1].grudge; });
   ok('grudges survive a save', g && g[0] != null, g);

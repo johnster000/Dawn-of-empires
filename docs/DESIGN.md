@@ -146,6 +146,14 @@ Bonuses are ordinary technology-style effects on the player's modifiers. Bots ar
    age (Hearth on hard, Forge on normal, Empire on easy; each 15 minutes of play also counts as an age) a bot only
    attacks players who hurt it within the last 4–8 minutes; afterwards it attacks anyone, and the gap between
    attacks shrinks with each age (×1.5, ×1.25, ×1, ×0.75).
+   The setup screen's **Bot temper** scales this on top of difficulty: Chill shifts the peace age one later,
+   counts 25 minutes of play as an age, keeps grudges 0.6× as long and waits for a 1.3× army with 1.5× longer gaps;
+   Aggressive shifts it one earlier, counts 10 minutes as an age, keeps grudges 1.5× longer, and attacks with a 0.8×
+   army at 0.7× gaps. **Bot age pace**: Chill will not start advancing before 10, 22 and 35 minutes and wants 25% more
+   villagers first; Aggressive wants 25% fewer before saving, trains 30% more villagers from the Hearth Age, steers
+   workers towards what the next age costs, skips optional soldiers while saving (unless attacked), and gathers 20%
+   faster. Measured on a bots-only Normal map: Hearth/Forge/Empire at about 12/30/— minutes (Chill), 8/16/32 (Normal)
+   and 7/14/23 (Aggressive). Normal on both is exactly the behaviour before these settings existed.
 10. **Sea** — a dock on the home shore (always on islands), fishing boats to the difficulty's target, galleys on
    station from the Hearth Age. Short of gold or stone at home, a bot lays out a mining camp on the nearest isle that
    has it and ferries three to five villagers over; settlers work whatever their island holds. An attack on another

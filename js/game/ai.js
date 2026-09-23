@@ -6,11 +6,30 @@ const DIFF = {
   normal: { boats: 4, galleys: 2, peaceAge: 2, grudge: 360, tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  walls: true, wallAge: 1, stoneAge: 2, wallVillagers: 14 },
   hard:   { boats: 6, galleys: 3, peaceAge: 1, grudge: 480, tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  walls: true, wallAge: 0, stoneAge: 1, wallVillagers: 12 },
 };
+/* Setup-screen tuning, applied on top of difficulty. Normal changes nothing.
+   Temper: how soon and how often a bot picks fights. peaceShift moves the age at which it stops waiting to be
+   provoked; ageEvery is how many seconds of play count as an age for that purpose; the rest scale how long it holds
+   a grudge, how big an army it waits for, how long between attacks, and when the first one can come.
+   Pace: how quickly a bot climbs the ages. vill scales the workforce it wants before saving for the next age;
+   minTime[a] is the earliest game time (seconds) at which it will start advancing into age a. focus pulls workers
+   towards whatever the next age still needs; hoard skips optional soldiers while saving, unless under attack;
+   workers scales the difficulty's villager target; gather is added to its gather rate, as difficulty does. */
+const TEMPER = {
+  chill:      { peaceShift: 1,  ageEvery: 1500, grudge: 0.6, army: 1.3, gap: 1.5, first: 1.5 },
+  normal:     { peaceShift: 0,  ageEvery: 900,  grudge: 1,   army: 1,   gap: 1,   first: 1 },
+  aggressive: { peaceShift: -1, ageEvery: 600,  grudge: 1.5, army: 0.8, gap: 0.7, first: 0.7 },
+};
+const AGE_PACE = {
+  chill:      { vill: 1.25, minTime: [0, 600, 1320, 2100], focus: 0, hoard: false, workers: 1, gather: 0 },
+  normal:     { vill: 1,    minTime: [0, 0, 0, 0], focus: 0, hoard: false, workers: 1, gather: 0 },
+  aggressive: { vill: 0.75, minTime: [0, 0, 0, 0], focus: 0.6, hoard: true, workers: 1.3, gather: 0.2 },
+};
 const AI = {
   create(p) {
     const D = DIFF[p.difficulty] || DIFF.normal;
-    p.ai = { D, t: Math.random() * D.tick, lastAttack: -Infinity, attacking: false, attackTarget: null, attackStart: 0, lastHouse: -99, threat: null, threatT: -99, rng: RNG.make(RNG.seedFrom('ai' + p.id + Game.seed)) };
-    for (const k of RESOURCES) p.mods.gather[k] += D.gather;
+    const s = (typeof Game !== 'undefined' && Game.settings) || {};
+    p.ai = { D, T: TEMPER[s.temper] || TEMPER.normal, P: AGE_PACE[s.pace] || AGE_PACE.normal, t: Math.random() * D.tick, lastAttack: -Infinity, attacking: false, attackTarget: null, attackStart: 0, lastHouse: -99, threat: null, threatT: -99, rng: RNG.make(RNG.seedFrom('ai' + p.id + Game.seed)) };
+    for (const k of RESOURCES) p.mods.gather[k] += D.gather + p.ai.P.gather;
   },
   tick(p, dt) {
     const S = p.ai; S.t -= dt; if (S.t > 0 || !p.alive) return;
@@ -38,7 +57,7 @@ const AI = {
     const nx = AGES[p.age + 1];
     if (!th || !nx) return;
     const D = S.D;
-    if (vill.length < Math.min(D.villagers * 0.7, 13)) return;
+    if (!AI.readyToAge(p, S, vill, 0.7, 13)) return;
     if (th.queue.some((q) => q.kind === 'age')) return;
     const have = nx.advance.need.filter((t) => p.buildings(t).some((b) => b.built)).length;
     if (have < nx.advance.needCount && !nx.advance.need.some((t) => p.buildings(t).some((b) => !b.built))) {
@@ -59,7 +78,7 @@ const AI = {
   economy(p, S, th, vill) {
     const D = S.D;
     // Villager production
-    if (th && vill.length < D.villagers && th.queue.length < 2 && p.pop() < p.popCap()) Sim.enqueue(th, { kind: 'unit', id: 'villager' });
+    if (th && vill.length < AI.workers(S, p) && th.queue.length < 2 && p.pop() < p.popCap()) Sim.enqueue(th, { kind: 'unit', id: 'villager' });
     // Rebuild a town hall if it is lost
     if (!th && vill.length && p.canAfford(BUILDINGS.townhall.cost) && !p.buildings('townhall').length) AI.placeNear(p, 'townhall', S.home || { x: vill[0].x, y: vill[0].y }, vill);
     // Desired split by age
@@ -67,6 +86,8 @@ const AI = {
     // Shift towards what we are short of
     for (const k of RESOURCES) { if (p.res[k] > 700) split[k] *= 0.5; if (p.res[k] < 80) split[k] *= 1.6; }
     if (p.age === 0 && p.res.food < 400 && vill.length >= 10) split.food *= 1.3;
+    const P = S.P || AGE_PACE.normal;
+    if (S.goal && P.focus) for (const k in S.goal) if (split[k] != null && p.res[k] < S.goal[k]) split[k] = Math.max(split[k], 0.1) * (1 + P.focus);
     const total = Object.values(split).reduce((a, b) => a + b, 0); for (const k in split) split[k] /= total;
     const counts = { food: 0, wood: 0, gold: 0, stone: 0 };
     const idle = [];
@@ -161,7 +182,14 @@ const AI = {
     }
     // Age up
     const nx = AGES[p.age + 1];
-    if (th && nx && vill.length >= Math.min(D.villagers * 0.75, 14) && !p.ageUpBlocker()) Sim.enqueue(th, { kind: 'age' });
+    if (th && nx && AI.readyToAge(p, S, vill, 0.75, 14) && !p.ageUpBlocker()) Sim.enqueue(th, { kind: 'age' });
+  },
+  workers(S, p) { const w = (S.P || AGE_PACE.normal).workers; return Math.round(S.D.villagers * (p && p.age === 0 ? Math.min(1, w) : w)); }, // the bigger workforce comes once the town is past the Dawn Age
+  /* Enough villagers for this bot's pace, and not earlier than its pace allows. */
+  readyToAge(p, S, vill, share, cap) {
+    const P = S.P || AGE_PACE.normal, D = S.D;
+    if (Game.time < (P.minTime[p.age + 1] || 0)) return false;
+    return vill.length >= Math.min(Math.ceil(Math.min(D.villagers * share, cap) * P.vill), AI.workers(S, p)); // ceil keeps Normal identical to before
   },
   pickBuilder(vill, b) {
     let best = null, bd = Infinity;
@@ -225,6 +253,7 @@ const AI = {
   trainMilitary(p, S) {
     const D = S.D, vill = p.units('villager').length;
     if (vill < 7 && p.age === 0) return;               // economy first
+    if (S.goal && (S.P || AGE_PACE.normal).hoard && Game.time - S.threatT > 25 && p.units().filter((u) => u.type !== 'villager' && !u.def.naval).length >= 4) return; // racing for the next age
     const pop = p.pop(), cap = p.popCap(); if (pop >= cap) return;
     const mil = p.buildings().filter((b) => b.built && b.def.trains && b.type !== 'townhall' && b.type !== 'dock' && b.queue.length < 2);
     for (const b of mil) {
@@ -234,7 +263,7 @@ const AI = {
       let id = opts[opts.length - 1]; if (S.rng() < 0.3) id = opts[0];
       const d = UNITS[id];
       // keep a little for villagers and houses while still small
-      const reserveFood = vill < D.villagers ? 60 : 0;
+      const reserveFood = vill < AI.workers(S, p) ? 60 : 0;
       if (p.res.food - reserveFood < (d.cost.food || 0) || !AI.spendable(p, S, d.cost)) continue;
       Sim.enqueue(b, { kind: 'unit', id });
     }
@@ -260,8 +289,9 @@ const AI = {
     }
     // early on a bot only goes after whoever has hurt it; it grows bolder with each age
     const pace = AI.PACE[Math.min(p.age, AI.PACE.length - 1)], provoked = AI.provokers(p).length > 0;
-    const armyNeed = Math.ceil(D.army * pace.army * (provoked && !AI.warlike(p) ? 0.75 : 1));
-    const ready = mil.length >= armyNeed && Game.time - S.lastAttack >= D.attackGap * pace.gap && (Game.time >= D.firstAttack || provoked);
+    const T = S.T || TEMPER.normal;
+    const armyNeed = Math.ceil(D.army * pace.army * T.army * (provoked && !AI.warlike(p) ? 0.75 : 1));
+    const ready = mil.length >= armyNeed && Game.time - S.lastAttack >= D.attackGap * pace.gap * T.gap && (Game.time >= D.firstAttack * T.first || provoked);
     if (!ready) {
       // gather the army at the frontier so it is not scattered
       if (S.home && S.rng() < 0.2) { const f = AI.frontier(p, S.home, 5); for (const u of mil) if (!u.order && U.dist(u.x, u.y, f.x, f.y) > 6) Sim.setOrder(u, { type: 'attackmove', x: Math.floor(f.x), y: Math.floor(f.y) }); }
@@ -278,10 +308,11 @@ const AI = {
   /* How long between attacks and how big an army, by age: patient in the Dawn Age, relentless at the end. */
   PACE: [{ gap: 1.5, army: 1 }, { gap: 1.25, army: 1 }, { gap: 1, army: 1 }, { gap: 0.75, army: 0.9 }],
   /* Past its peace age (or after enough time that it should have been) a bot attacks anyone. */
-  warlike(p) { const D = p.ai.D; return Math.max(p.age, Math.floor(Game.time / 900)) >= D.peaceAge; },
+  warlike(p) { const D = p.ai.D, T = p.ai.T || TEMPER.normal; return Math.max(p.age, Math.floor(Game.time / T.ageEvery)) >= D.peaceAge + T.peaceShift; },
+  grudgeFor(p) { return p.ai.D.grudge * (p.ai.T || TEMPER.normal).grudge; },
   /* Players who have hurt this bot recently enough to be remembered. */
-  provokers(p) { const out = []; for (const id in p.grudge) if (Game.time - p.grudge[id] < p.ai.D.grudge && Game.players[id] && Game.players[id].alive) out.push(+id); return out; },
-  hostileTo(p, q) { return AI.warlike(p) || (p.grudge[q] != null && Game.time - p.grudge[q] < p.ai.D.grudge); },
+  provokers(p) { const out = []; for (const id in p.grudge) if (Game.time - p.grudge[id] < AI.grudgeFor(p) && Game.players[id] && Game.players[id].alive) out.push(+id); return out; },
+  hostileTo(p, q) { return AI.warlike(p) || (p.grudge[q] != null && Game.time - p.grudge[q] < AI.grudgeFor(p)); },
   /* ---- the sea ---- */
   naval(p, S, th, vill) {
     if (!S.home || !World.region) return;

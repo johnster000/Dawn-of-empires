@@ -90,6 +90,8 @@ const UI = {
     opt($('set-maptype'), [['land', 'Continent'], ['islands', 'Islands — one each, rich isles between']]);
     opt($('set-terrain'), Object.entries(TERRAINS).map(([k, v]) => [k, v.name]));
     opt($('set-enemies'), [[1, '1 enemy'], [2, '2 enemies'], [3, '3 enemies'], [4, '4 enemies'], [5, '5 enemies']]);
+    opt($('set-temper'), [['chill', 'Chill — slow to anger, fights back'], ['normal', 'Normal — bolder with each age'], ['aggressive', 'Aggressive — raids early and often']]);
+    opt($('set-pace'), [['chill', 'Chill — takes its time'], ['normal', 'Normal'], ['aggressive', 'Aggressive — races through the ages']]);
     opt($('set-difficulty'), [['easy', 'Easy — a gentle neighbour'], ['normal', 'Normal — builds and raids'], ['hard', 'Hard — fast, aggressive, sharper economy']]);
     opt($('set-resources'), [['low', 'Low'], ['normal', 'Standard'], ['high', 'High'], ['huge', 'Huge']]);
     opt($('set-age'), AGES.map((a, i) => [i, `${a.name} (${a.numeral})`]));
@@ -99,13 +101,13 @@ const UI = {
     opt($('set-faction'), [['random', 'Random'], ...Object.keys(FACTIONS).map((k) => [k, FACTIONS[k].name])]);
     let saved = null; try { saved = JSON.parse(localStorage.getItem('anvil-settings') || 'null'); } catch (e) {}
     const s = Object.assign({}, Game.defaults, saved || {});
-    $('set-size').value = s.mapSize; $('set-maptype').value = s.mapType === 'islands' ? 'islands' : 'land'; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-faction').value = FACTIONS[s.faction] ? s.faction : 'random'; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
+    $('set-size').value = s.mapSize; $('set-maptype').value = s.mapType === 'islands' ? 'islands' : 'land'; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-temper').value = TEMPER[s.temper] ? s.temper : 'normal'; $('set-pace').value = AGE_PACE[s.pace] ? s.pace : 'normal'; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-faction').value = FACTIONS[s.faction] ? s.faction : 'random'; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
     const blurb = () => { $('terrain-blurb').textContent = TERRAINS[$('set-terrain').value].blurb; const f = FACTIONS[$('set-faction').value]; $('faction-blurb').textContent = f ? `${f.blurb} ${f.bonus} Unique warrior: ${UNITS[f.unique].name} (${BUILDINGS[UNITS[f.unique].from].name}).` : 'A people chosen at random when the game begins.'; };
     $('set-terrain').onchange = blurb; $('set-faction').onchange = blurb; blurb();
   },
   readSetup() {
     const $ = this.$;
-    const s = { mapType: $('set-maptype').value, mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, faction: $('set-faction').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
+    const s = { mapType: $('set-maptype').value, mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, temper: $('set-temper').value, pace: $('set-pace').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, faction: $('set-faction').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
     try { localStorage.setItem('anvil-settings', JSON.stringify(s)); } catch (e) {}
     return Object.assign({}, Game.defaults, s);
   },

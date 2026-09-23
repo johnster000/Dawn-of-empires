@@ -1,7 +1,7 @@
 /* Game controller: settings, setup, the main loop, selection and commands, victory. */
 const STEP = 1 / 20;
 const Game = {
-  defaults: { faction: 'random', mapType: 'land', mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
+  defaults: { temper: 'normal', pace: 'normal', faction: 'random', mapType: 'land', mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
   settings: null, players: [], human: 0, units: [], buildings: [], effects: [], selection: [], groups: {},
   running: false, paused: false, over: false, time: 0, acc: 0, lastTs: 0, seed: 0,
   placing: null, buildMenu: false, wallStart: null, mode: null, selectedRes: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,

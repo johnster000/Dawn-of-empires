@@ -43,7 +43,8 @@ phones and tablets (tap, drag, pinch).
   rules as the player. Early on they only attack whoever has hurt them; each age makes them bolder.
 - **Procedural maps** — four terrains (Meadow, Desert, Tundra, Highlands), four sizes up to 144×144, seeded so a map
   can be replayed. Fog of war with soft edges, a diamond minimap, and an optional revealed map.
-- **Settings** — map type and size, number of rivals, difficulty, starting resources, starting age, population
+- **Settings** — map type and size, number of rivals, difficulty, bot temper (chill / normal / aggressive), bot age
+  pace (chill / normal / aggressive), starting resources, starting age, population
   cap, game speed, your people, player colour, map seed.
 - **Feedback** — floating alerts with click-to-jump, minimap pings, a synthesized soundscape (no audio files), and a
   final scoreboard.
