@@ -14,9 +14,14 @@ phones and tablets (tap, drag, pinch).
 
 - **Four ages** — Dawn, Hearth, Forge and Empire. Each one changes the look of every building (thatch → shingle →
   red tile → slate and gold) and unlocks new buildings, units and technologies.
-- **Economy** — berries, shore fish, forests, stone outcrops and gold veins, plus farms that never run out. Drop-off camps,
+- **Peoples** — Romans, Huns, Norse, Egyptians, Gauls and Greeks, each with one unique warrior (Praetorian, Steppe
+  Archer, Hirdman, Medjay, Gaesatae, Phalangite) and one modest bonus. Pick one or draw at random.
+- **Islands and ships** — an Islands map type puts every people on its own island with a little stone and gold, and
+  the rich deposits out on neutral isles. Docks build Fishing Boats, Transports that carry eight, and War Galleys;
+  bots fish, settle the isles and invade by sea.
+- **Economy** — berries, shore and deep-sea fish, forests, stone outcrops and gold veins, plus farms that never run out. Drop-off camps,
   housing, population caps, rally points, idle-villager cycling.
-- **19 buildings** — Town Hall, House, Farm, Granary, Lumber Camp, Mining Camp, Barracks, Archery Range, Stables,
+- **20 buildings** — Town Hall, House, Farm, Granary, Lumber Camp, Mining Camp, Dock, Barracks, Archery Range, Stables,
   Blacksmith, Watchtower, Hall of Scholars, Keep, Siege Workshop, the Monument (an alternative victory), and
   palisade and stone walls with gates that only your own people can pass.
 - **Garrisons** — villagers and foot soldiers shelter inside the Town Hall, towers and keeps, which then shoot more
@@ -28,17 +33,18 @@ phones and tablets (tap, drag, pinch).
   rather than queueing on one tile.
 - **Saving** — autosave every minute, Continue from the title screen, and text export/import to move a match between
   devices.
-- **8 units** — Villager, Spearman, Swordsman, Archer, Crossbowman, Horseman, Knight and Catapult, with a
-  rock-paper-scissors of bonuses (spears beat horses, horses beat archers, archers beat infantry, siege beats walls).
-- **19 technologies** — weapon, armour and range lines at the Blacksmith; wheelbarrow, axes, picks, ploughs and
-  conscription at the Hall of Scholars; Loom at the Town Hall.
+- **17 units** — Villager, Spearman, Swordsman, Archer, Crossbowman, Horseman, Knight, Catapult, three boats and six
+  unique warriors, with a rock-paper-scissors of bonuses (spears beat horses, horses beat archers, archers beat
+  infantry, siege beats walls).
+- **19 technologies** — weapon, armour and range lines at the Blacksmith; carrying yoke, ox cart, axes, picks,
+  ploughs and muster at the Hall of Scholars; Homespun at the Town Hall.
 - **Bot opponents** — up to five rivals on three difficulties. They gather, build, save up for the next age,
   research, raise armies, raid, wall their towns, ring the bell, repair, defend and rebuild, using exactly the same
-  rules as the player.
+  rules as the player. Early on they only attack whoever has hurt them; each age makes them bolder.
 - **Procedural maps** — four terrains (Meadow, Desert, Tundra, Highlands), four sizes up to 144×144, seeded so a map
   can be replayed. Fog of war with soft edges, a diamond minimap, and an optional revealed map.
-- **Settings** — number of rivals, difficulty, starting resources, starting age, population cap, game speed,
-  player colour, map seed.
+- **Settings** — map type and size, number of rivals, difficulty, starting resources, starting age, population
+  cap, game speed, your people, player colour, map seed.
 - **Feedback** — floating alerts with click-to-jump, minimap pings, a synthesized soundscape (no audio files), and a
   final scoreboard.
 

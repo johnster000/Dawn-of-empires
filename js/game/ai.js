@@ -2,9 +2,9 @@
    The bot plays by the same rules as the human (same costs, same units); difficulty changes its
    targets, tempo and a small gather-rate modifier, not what it is allowed to do. */
 const DIFF = {
-  easy:   { peaceAge: 3, grudge: 240, tick: 1.4, villagers: 12, army: 16, attackGap: 240, firstAttack: 480, gather: -0.15, farms: 4, towers: 0, techs: false, walls: false },
-  normal: { peaceAge: 2, grudge: 360, tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  walls: true, wallAge: 1, stoneAge: 2, wallVillagers: 14 },
-  hard:   { peaceAge: 1, grudge: 480, tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  walls: true, wallAge: 0, stoneAge: 1, wallVillagers: 12 },
+  easy:   { boats: 2, galleys: 1, peaceAge: 3, grudge: 240, tick: 1.4, villagers: 12, army: 16, attackGap: 240, firstAttack: 480, gather: -0.15, farms: 4, towers: 0, techs: false, walls: false },
+  normal: { boats: 4, galleys: 2, peaceAge: 2, grudge: 360, tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  walls: true, wallAge: 1, stoneAge: 2, wallVillagers: 14 },
+  hard:   { boats: 6, galleys: 3, peaceAge: 1, grudge: 480, tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  walls: true, wallAge: 0, stoneAge: 1, wallVillagers: 12 },
 };
 const AI = {
   create(p) {
@@ -16,7 +16,7 @@ const AI = {
     const S = p.ai; S.t -= dt; if (S.t > 0 || !p.alive) return;
     S.t = S.D.tick;
     const th = p.buildings('townhall').find((b) => b.built) || null;
-    const vill = p.units('villager'), mil = p.units().filter((u) => u.type !== 'villager');
+    const vill = p.units('villager'), mil = p.units().filter((u) => u.type !== 'villager' && !u.def.naval);
     S.home = th || p.buildings().find((b) => b.built) || null;
     if (!S.home && !vill.length) return;
     AI.plan(p, S, th, vill);
@@ -28,6 +28,7 @@ const AI = {
     AI.repair(p, S, vill);
     AI.research(p, S);
     AI.trainMilitary(p, S);
+    AI.naval(p, S, th, vill);
     AI.attack(p, S, mil);
   },
 
@@ -75,6 +76,8 @@ const AI = {
       else if (u.order.type === 'gather' && u.carry.kind) counts[u.carry.kind]++;
     }
     const working = Object.values(counts).reduce((a, b) => a + b, 0) + idle.length || 1;
+    // settlers on another island get their own turn, so a busy home town never leaves them standing about
+    if (World.islands && S.home) { const hr = World.regionAt(S.home.x, S.home.y); let n = 0; for (let i = idle.length - 1; i >= 0 && n < 3; i--) { const u = idle[i]; if (World.regionAt(u.x, u.y) === hr) continue; n++; idle.splice(i, 1); if (AI.assignAway(p, S, u)) { const k = u.order && u.order.res ? RES_KIND[rk(u.order.res)] : null; if (k) counts[k]++; } } }
     // Reassign at most two villagers a tick, idle ones first
     let moves = 0;
     for (const u of idle) { if (moves++ >= 3) break; const k = AI.mostNeeded(split, counts, working); if (AI.assign(p, S, u, k)) counts[k]++; }
@@ -90,13 +93,16 @@ const AI = {
   /* Send one villager after a resource kind, building a camp or farm when that is the sensible thing. */
   assign(p, S, u, kind) {
     const home = S.home; if (!home) return false;
+    // a villager ferried to another island works what is there
+    if (World.islands && World.regionAt(u.x, u.y) !== World.regionAt(home.x, home.y)) return AI.assignAway(p, S, u);
     const resKind = { food: 'berry', wood: 'tree', gold: 'gold', stone: 'stone' }[kind];
     const kinds = kind === 'food' ? ['berry', 'fish'] : [resKind];
     const drops = AI.dropoffs(p, kind);
     const nearDrop = (r) => drops.some((d) => U.dist(d.x, d.y, r.x, r.y) <= 9);
     // something already serviced by a drop-off
     let r = null, bd = Infinity;
-    for (const rr of World.res) { if (!kinds.includes(rr.kind) || rr.amount <= 0) continue; if ((rr.workers || 0) >= (rr.kind === 'tree' ? 2 : 5)) continue; if (!nearDrop(rr)) continue; const d = U.dist2(rr.x, rr.y, u.x, u.y); if (d < bd) { bd = d; r = rr; } }
+    const reg = World.islands ? World.regionAt(u.x, u.y) : 0, mine = (rr) => !reg || World.resRegion(rr) === reg;
+    for (const rr of World.res) { if (!kinds.includes(rr.kind) || rr.amount <= 0 || !mine(rr)) continue; if ((rr.workers || 0) >= (rr.kind === 'tree' ? 2 : 5)) continue; if (!nearDrop(rr)) continue; const d = U.dist2(rr.x, rr.y, u.x, u.y); if (d < bd) { bd = d; r = rr; } }
     if (r && Sim.assignGather(u, r, null, 12)) return true;
     if (kind === 'food') {
       const farm = Sim.freeFarm(u, 40); if (farm) { Sim.setOrder(u, { type: 'gather', res: farm }); return true; }
@@ -108,7 +114,7 @@ const AI = {
     }
     // no serviced deposit: find the closest deposit to home and put a camp beside it
     let far = null; bd = Infinity;
-    for (const rr of World.res) { if (rr.kind !== resKind || rr.amount <= 0) continue; const d = U.dist2(rr.x, rr.y, home.x, home.y); if (d < bd) { bd = d; far = rr; } }
+    for (const rr of World.res) { if (rr.kind !== resKind || rr.amount <= 0 || !mine(rr)) continue; const d = U.dist2(rr.x, rr.y, home.x, home.y); if (d < bd) { bd = d; far = rr; } }
     if (!far) return kind === 'wood' ? false : AI.assign(p, S, u, 'wood');
     const campType = kind === 'wood' ? 'lumbercamp' : 'miningcamp';
     const pending = p.buildings(campType).find((b) => !b.built && U.dist(b.x, b.y, far.x, far.y) < 10);
@@ -159,7 +165,7 @@ const AI = {
   },
   pickBuilder(vill, b) {
     let best = null, bd = Infinity;
-    for (const v of vill) { if (v.order && (v.order.type === 'build' || v.order.type === 'attack')) continue; if (v.order && v.order.type === 'gather' && v.order.res && rk(v.order.res) === 'farm') continue; const d = U.dist2(v.x, v.y, b.x, b.y); if (d < bd) { bd = d; best = v; } }
+    for (const v of vill) { if (v.order && (v.order.type === 'build' || v.order.type === 'attack')) continue; if (v.order && v.order.type === 'gather' && v.order.res && rk(v.order.res) === 'farm') continue; const d = U.dist2(v.x, v.y, b.x, b.y); if (d < bd && (!World.islands || Sim.canReach(v, b))) { bd = d; best = v; } }
     return best;
   },
   /* A point some tiles from home in the direction of the nearest enemy. */
@@ -220,7 +226,7 @@ const AI = {
     const D = S.D, vill = p.units('villager').length;
     if (vill < 7 && p.age === 0) return;               // economy first
     const pop = p.pop(), cap = p.popCap(); if (pop >= cap) return;
-    const mil = p.buildings().filter((b) => b.built && b.def.trains && b.type !== 'townhall' && b.queue.length < 2);
+    const mil = p.buildings().filter((b) => b.built && b.def.trains && b.type !== 'townhall' && b.type !== 'dock' && b.queue.length < 2);
     for (const b of mil) {
       const opts = b.def.trains.filter((id) => UNITS[id].age <= p.age && p.mayTrain(id));
       if (!opts.length) continue;
@@ -235,6 +241,7 @@ const AI = {
   },
   attack(p, S, mil) {
     const D = S.D, idleMil = mil.filter((u) => !u.order || u.order.type === 'attackmove');
+    if (S.invasion) { AI.invade(p, S, mil); return; }
     if (S.attacking) {
       const t = S.attackTarget;
       const done = !t || t.dead || Game.time - S.attackStart > 150 || mil.length < 3;
@@ -247,7 +254,7 @@ const AI = {
         for (const u of mil) if (u.order && u.order.type === 'attackmove') Sim.setOrder(u, { type: 'attackmove', x: Math.floor(home.x), y: Math.floor(home.y) });
       } else {
         // stragglers rejoin
-        for (const u of idleMil) if (!u.order) Sim.setOrder(u, { type: 'attackmove', x: Math.floor(t.x), y: Math.floor(t.y) });
+        for (const u of idleMil) if (!u.order && World.regionAt(u.x, u.y) === World.regionAt(t.x, t.y)) Sim.setOrder(u, { type: 'attackmove', x: Math.floor(t.x), y: Math.floor(t.y) });
       }
       return;
     }
@@ -261,6 +268,8 @@ const AI = {
       return;
     }
     const target = AI.pickTarget(p, S, null); if (!target) return;
+    // across the water: ship the army over first
+    if (World.islands && S.home && World.regionAt(target.x, target.y) !== World.regionAt(S.home.x, S.home.y)) { S.invasion = { target, phase: 'ships', t: Game.time }; S.lastAttack = Game.time; return; }
     if (AI.warlike(p) && !S.warned) { S.warned = true; if (Game.players[Game.human] && Game.players[Game.human].alive && p.id !== Game.human) UI.message(`${p.name} no longer waits to be provoked.`, 'bad'); }
     S.attacking = true; S.attackTarget = target; S.attackStart = Game.time; S.lastAttack = Game.time;
     for (const u of mil) Sim.setOrder(u, { type: 'attackmove', x: Math.floor(target.x), y: Math.floor(target.y) });
@@ -273,6 +282,141 @@ const AI = {
   /* Players who have hurt this bot recently enough to be remembered. */
   provokers(p) { const out = []; for (const id in p.grudge) if (Game.time - p.grudge[id] < p.ai.D.grudge && Game.players[id] && Game.players[id].alive) out.push(+id); return out; },
   hostileTo(p, q) { return AI.warlike(p) || (p.grudge[q] != null && Game.time - p.grudge[q] < p.ai.D.grudge); },
+  /* ---- the sea ---- */
+  naval(p, S, th, vill) {
+    if (!S.home || !World.region) return;
+    const D = S.D, home = S.home, homeReg = World.regionAt(home.x, home.y);
+    const docks = p.buildings('dock'), dock = docks.find((b) => b.built);
+    // islands need a dock; on a continent only if there is good water close by
+    if (!docks.length && vill.length >= 7 && p.canAfford(BUILDINGS.dock.cost) && (World.islands || (p.age >= 1 && S.rng() < 0.05))) AI.placeDock(p, home, homeReg, vill);
+    if (!dock) return;
+    const units = p.units(), boats = units.filter((u) => u.type === 'fishboat'), galleys = units.filter((u) => u.type === 'galley'), trans = units.filter((u) => u.type === 'transport');
+    const q = (id) => dock.queue.filter((x) => x.id === id).length;
+    const roomy = p.pop() < p.popCap() && dock.queue.length < 2;
+    const fish = World.res.some((r) => r.kind === 'fish' && r.amount > 0 && U.dist(r.x, r.y, dock.x, dock.y) < 30);
+    if (roomy && fish && boats.length + q('fishboat') < D.boats && AI.spendable(p, S, UNITS.fishboat.cost)) Sim.enqueue(dock, { kind: 'unit', id: 'fishboat' });
+    else if (roomy && World.islands && p.age >= 1 && galleys.length + q('galley') < D.galleys && AI.spendable(p, S, UNITS.galley.cost)) Sim.enqueue(dock, { kind: 'unit', id: 'galley' });
+    for (const b of boats) if (!b.order) { const f = Sim.nearestFree(b, 'fish', b.x, b.y, 36); if (f) Sim.assignGather(b, f, null, 36); }
+    // galleys keep station off the home shore and fight whatever comes near
+    for (const g of galleys) if (!g.order && !S.invasion && U.dist(g.x, g.y, dock.x, dock.y) > 9) Sim.setOrder(g, { type: 'attackmove', x: Math.floor(dock.x), y: Math.floor(dock.y) + 3 });
+    if (World.islands) AI.colonise(p, S, home, homeReg, dock, vill, trans);
+  },
+  /* A dock on the home shore, as close to the town as the coast allows. */
+  placeDock(p, home, homeReg, vill) {
+    const def = BUILDINGS.dock; let best = null, bd = Infinity;
+    for (let x = Math.floor(home.x) - 24; x <= home.x + 24; x++) for (let y = Math.floor(home.y) - 24; y <= home.y + 24; y++) {
+      if (!World.canPlace(def, x, y, true)) continue;
+      let ours = false; for (let ax = x - 1; ax <= x + def.size && !ours; ax++) for (let ay = y - 1; ay <= y + def.size; ay++) if (World.passable(ax, ay) && World.regionAt(ax, ay) === homeReg) { ours = true; break; }
+      if (!ours) continue;
+      const d = U.dist2(x, y, home.x, home.y); if (d < bd) { bd = d; best = [x, y]; }
+    }
+    if (!best) return false;
+    const b = Game.placeBuilding(p, 'dock', best[0], best[1]); if (!b) return false;
+    const builders = vill.filter((v) => !(v.order && v.order.type === 'build')).sort((a, c) => U.dist2(a.x, a.y, b.x, b.y) - U.dist2(c.x, c.y, b.x, b.y)).slice(0, 2);
+    for (const v of builders) Sim.setOrder(v, { type: 'build', bld: b });
+    return true;
+  },
+  /* Short of stone or gold at home: ferry a few villagers to the nearest island that has it. */
+  colonise(p, S, home, homeReg, dock, vill, trans) {
+    const c = S.colony;
+    if (c) {
+      const ship = c.ship;
+      if (!ship || ship.dead) { S.colony = null; return; }
+      if (c.phase === 'board') {
+        const waiting = c.men.filter((m) => !m.dead && m.order && m.order.type === 'board').length;
+        if (!waiting && ship.cargo.length) { Sim.setOrder(ship, { type: 'unload', x: c.res.x, y: c.res.y, region: c.region }); c.phase = 'sail'; c.t = Game.time; }
+        else if (!waiting && !ship.cargo.length) S.colony = null;
+        else if (Game.time - c.t > 60) { for (const m of c.men) if (m.order && m.order.type === 'board') Sim.idle(m); }
+      } else if (c.phase === 'sail') {
+        if (!ship.cargo.length) {
+          const landed = c.men.filter((m) => !m.dead && !m.inside && World.regionAt(m.x, m.y) === c.region);
+          for (const m of landed) AI.assignAway(p, S, m);
+          S.colonyRegion = c.region; S.colony = null; S.lastColony = Game.time;
+          const back = World.landingNear(home.x, home.y, homeReg, 20); if (back) Sim.setOrder(ship, { type: 'move', x: back[0], y: back[1] });
+        } else if (Game.time - c.t > 150) { Sim.setOrder(ship, { type: 'unload', x: ship.x, y: ship.y, region: 0 }); S.colony = null; }
+      }
+      return;
+    }
+    if (p.age < 1 || vill.length < 12 || S.invasion || Game.time - (S.lastColony || -999) < 240) return;
+    const left = (kind, reg) => World.res.some((r) => r.kind === kind && r.amount > 0 && World.resRegion(r) === reg);
+    const want = !left('gold', homeReg) ? 'gold' : !left('stone', homeReg) ? 'stone' : null;
+    if (!want) return;
+    const away = vill.filter((v) => World.regionAt(v.x, v.y) !== homeReg).length;
+    if (away >= 8) return;
+    // the nearest deposit of it off the home island
+    let res = null, bd = Infinity;
+    for (const r of World.res) { if (r.kind !== want || r.amount <= 0) continue; const g = World.resRegion(r); if (!g || g === homeReg) continue; const d = U.dist2(r.x, r.y, home.x, home.y); if (d < bd) { bd = d; res = r; } }
+    if (!res) return;
+    if (!p.canAfford({ wood: BUILDINGS.miningcamp.cost.wood + 20 })) return;
+    const ship = trans.find((t) => !t.order && !t.cargo.length);
+    if (!ship) { if (!trans.length && !dock.queue.some((q) => q.id === 'transport') && p.canAfford(UNITS.transport.cost)) Sim.enqueue(dock, { kind: 'unit', id: 'transport' }); return; }
+    const men = vill.filter((v) => World.regionAt(v.x, v.y) === homeReg && !(v.order && (v.order.type === 'build' || (v.order.type === 'gather' && v.order.res && rk(v.order.res) === 'farm')))).sort((a, b) => U.dist2(a.x, a.y, ship.x, ship.y) - U.dist2(b.x, b.y, ship.x, ship.y)).slice(0, 5);
+    if (men.length < 3) return;
+    for (const m of men) Sim.setOrder(m, { type: 'board', ship });
+    // lay out the camp now, while the wood is in hand; the settlers build it when they land
+    if (!p.buildings('miningcamp').some((b) => U.dist(b.x, b.y, res.x, res.y) < 10)) AI.placeNear(p, 'miningcamp', { x: res.x + 0.5, y: res.y + 0.5 }, [], 2);
+    S.colony = { ship, men, res, region: World.resRegion(res), phase: 'board', t: Game.time };
+  },
+  /* Work for a villager on an island away from home: whatever it has, with a camp beside it. */
+  assignAway(p, S, u) {
+    const reg = World.regionAt(u.x, u.y), order = ['gold', 'stone', 'wood'].sort((a, b) => p.res[a] - p.res[b]);
+    for (const kind of order) {
+      const rkind = kind === 'wood' ? 'tree' : kind;
+      let r = null, bd = Infinity;
+      for (const rr of World.res) { if (rr.kind !== rkind || rr.amount <= 0 || World.resRegion(rr) !== reg) continue; const d = U.dist2(rr.x, rr.y, u.x, u.y); if (d < bd) { bd = d; r = rr; } }
+      if (!r) continue;
+      const camp = kind === 'wood' ? 'lumbercamp' : 'miningcamp';
+      const drop = p.buildings().some((b) => b.def.dropoff && b.def.dropoff.includes(kind) && U.dist(b.x, b.y, r.x, r.y) < 12 && Sim.canReach(u, b));
+      if (!drop) { const pending = p.buildings(camp).find((b) => !b.built && World.regionAt(b.x, b.y) === reg); if (pending) { Sim.setOrder(u, { type: 'build', bld: pending }); return true; } if (AI.placeNear(p, camp, { x: r.x + 0.5, y: r.y + 0.5 }, [u], 2)) return true; }
+      if (Sim.assignGather(u, r, null, 12)) return true;
+    }
+    return false;
+  },
+  /* Seaborne attack: build transports, load the army at the home shore, land it beside the target. */
+  invade(p, S, mil) {
+    const v = S.invasion, t = v.target, home = S.home;
+    if (!t || t.dead || !home) { S.invasion = null; return; }
+    const homeReg = World.regionAt(home.x, home.y), tReg = World.regionAt(t.x, t.y);
+    const dock = p.buildings('dock').find((b) => b.built);
+    const army = mil.filter((u) => World.regionAt(u.x, u.y) === homeReg && u.def.cls !== 'siege');
+    const trans = p.units('transport').filter((s) => !s.dead);
+    const age = Game.time - v.t;
+    if (v.phase === 'ships') {
+      const need = Math.min(3, Math.max(1, Math.ceil(army.length / 8)));
+      if (trans.length < need && dock) { if (!dock.queue.some((q) => q.id === 'transport') && p.canAfford(UNITS.transport.cost) && p.pop() < p.popCap()) Sim.enqueue(dock, { kind: 'unit', id: 'transport' }); }
+      if (!dock && age > 90) { S.invasion = null; return; }
+      if (trans.length >= need || (trans.length && age > 100)) {
+        const shore = World.landingNear(home.x, home.y, homeReg, 22);
+        v.ships = trans.slice(0, need);
+        if (shore) for (const s of v.ships) if (!s.cargo.length) Sim.setOrder(s, { type: 'move', x: shore[0], y: shore[1] });
+        let i = 0; for (const u of army) { const s = v.ships[i % v.ships.length]; if (s.cargo.length + army.filter((a) => a.order && a.order.ship === s).length < s.def.capacity) Sim.setOrder(u, { type: 'board', ship: s }); i++; }
+        v.phase = 'board'; v.t = Game.time;
+      }
+      if (age > 240) S.invasion = null;
+      return;
+    }
+    const ships = (v.ships || []).filter((s) => !s.dead);
+    if (!ships.length) { S.invasion = null; return; }
+    if (v.phase === 'board') {
+      const boarding = mil.filter((u) => u.order && u.order.type === 'board').length;
+      if ((!boarding && ships.some((s) => s.cargo.length)) || age > 50) {
+        for (const s of ships) if (s.cargo.length) Sim.setOrder(s, { type: 'unload', x: t.x, y: t.y, region: tReg, after: { type: 'attackmove', x: Math.floor(t.x), y: Math.floor(t.y) } });
+        for (const u of mil) if (u.order && u.order.type === 'board') Sim.idle(u);
+        for (const g of p.units('galley')) Sim.setOrder(g, { type: 'attackmove', x: Math.floor(t.x), y: Math.floor(t.y) });
+        v.phase = 'sail'; v.t = Game.time;
+        if (!ships.some((s) => s.cargo.length)) S.invasion = null;
+      }
+      return;
+    }
+    if (v.phase === 'sail') {
+      if (ships.every((s) => !s.cargo.length) || age > 150) {
+        if (Game.players[t.owner] && t.owner === Game.human) Game.onAIAttack(p, t);
+        S.invasion = null; S.attacking = true; S.attackTarget = t; S.attackStart = Game.time; S.lastAttack = Game.time;
+        const shore = World.landingNear(home.x, home.y, homeReg, 22);
+        for (const s of ships) if (!s.cargo.length && shore) Sim.setOrder(s, { type: 'move', x: shore[0], y: shore[1] });
+      }
+    }
+  },
   /* Nearest enemy building it is willing to hit, with a preference for the human player and soft targets first. */
   pickTarget(p, S, near) {
     const from = near || S.home || { x: World.w / 2, y: World.h / 2 };
@@ -370,7 +514,7 @@ const AI = {
     if (!threat) for (const u of p.units('villager')) if (u.lastHit != null && Game.time - u.lastHit < 3 && u.lastAttacker && !u.lastAttacker.dead && u.lastAttacker.kind === 'unit') threat = u.lastAttacker;
     if (!threat) return;
     S.threat = threat; S.threatT = Game.time;
-    const defenders = mil.filter((u) => !u.order || u.order.type === 'attackmove' || (u.order.type === 'attack' && u.order.target && u.order.target.kind === 'building'));
+    const defenders = mil.filter((u) => (!u.order || u.order.type === 'attackmove' || (u.order.type === 'attack' && u.order.target && u.order.target.kind === 'building')) && World.regionAt(u.x, u.y) === World.regionAt(threat.x, threat.y));
     for (const u of defenders) if (U.dist(u.x, u.y, threat.x, threat.y) < 30 || !S.attacking) Sim.setOrder(u, { type: 'attack', target: threat });
     // villagers flee from soldiers if they are far from home... simply keep working (like the classics)
     if (!mil.length && S.home && p.canAfford(UNITS.spearman.cost)) { const br = p.buildings('barracks').find((b) => b.built && b.queue.length < 3); if (br) Sim.enqueue(br, { kind: 'unit', id: 'spearman' }); }

@@ -40,6 +40,12 @@ Two different registers, on purpose:
   is cut off. Each start gets guaranteed forest, stone, gold and berries within 5–12 tiles.
 - Fog of war for the human player (explored / visible per tile), updated three times a second from sight radii.
 - Map sizes 64², 88², 112², 144². Up to six players spaced evenly on a ring.
+- **Islands** map type: all water, one noisy island per player on the ring (radius sized so channels stay at least
+  seven tiles wide), a neutral isle in the middle and one between each pair of neighbours. Home islands get four
+  stone and four gold; the neutral isles carry two or three deposits each. Deep-water shoals (no land within one tile)
+  are only reachable by boat.
+- Land and water regions are flood-filled four-way after generation. A path is never searched between two regions,
+  and land units ordered across the water are told to take a transport instead of being sent walking.
 
 ### Economy
 - Villagers gather ~0.45–0.55 per second, carry 10 (+5 per cart technology), deposit at the nearest matching drop-off.
@@ -47,6 +53,23 @@ Two different registers, on purpose:
   infinite, one worker each, 2×2, walkable.
 - Builders stack with diminishing returns: rate = (1 + 0.6·(n−1)) / n per builder.
 - Houses +5 population, Town Hall +5, cap configurable 50–200.
+- Docks (2×2) sit on water against the shore, take in food, and build boats. Fishing Boats reuse the villager gather
+  loop with water standing spots and carry 20. Transports hold eight: land units walk to the shore beside them and
+  step aboard; unloading sails to the nearest water tile touching the target island and puts everyone ashore on
+  distinct tiles. A sunk transport takes its passengers with it. War Galleys are ranged ships with a bonus against
+  ships. Ships and walkers never shove each other.
+
+### Peoples
+| People | Unique warrior (Hearth Age) | Bonus |
+|---|---|---|
+| Romans | Praetorian — armoured shield infantry, slow | Builders work 15% faster |
+| Huns | Steppe Archer — mounted archer, range 3 | Stables train 20% faster |
+| Norse | Hirdman — quick axeman, ×1.5 vs buildings | Wood +10%, boats train 25% faster |
+| Egyptians | Medjay — javelin skirmisher, ×1.5 vs cavalry | Stone and gold +10% |
+| Gauls | Gaesatae — unarmoured, fast, hard-hitting | Farms +15% |
+| Greeks | Phalangite — pikeman, ×2.5 vs cavalry | Research 20% faster |
+
+Bonuses are ordinary technology-style effects on the player's modifiers. Bots are dealt distinct peoples.
 
 ### Ages
 | Age | Roof / wall | Advance cost | Requirement |
@@ -118,8 +141,16 @@ Two different registers, on purpose:
 8. **Bell and repairs** — two or more raiders near home with fewer defenders present rings the Town Bell; twelve quiet
    seconds ring the all-clear. Badly damaged buildings are repaired once no enemy is near.
 9. **Attack** — when the army reaches its threshold and the cooldown has passed, attack-move at the nearest enemy
-   building (soft targets and the human preferred), roll to the next target, go home after 2.5 minutes or when
-   reduced to two units.
+   building it is willing to hit (soft targets and the human preferred), roll to the next target, go home after
+   2.5 minutes or when reduced to two units. **Temper:** every player remembers who last hurt it. Before its peace
+   age (Hearth on hard, Forge on normal, Empire on easy; each 15 minutes of play also counts as an age) a bot only
+   attacks players who hurt it within the last 4–8 minutes; afterwards it attacks anyone, and the gap between
+   attacks shrinks with each age (×1.5, ×1.25, ×1, ×0.75).
+10. **Sea** — a dock on the home shore (always on islands), fishing boats to the difficulty's target, galleys on
+   station from the Hearth Age. Short of gold or stone at home, a bot lays out a mining camp on the nearest isle that
+   has it and ferries three to five villagers over; settlers work whatever their island holds. An attack on another
+   island becomes an invasion: build up to three transports, board the army at the home shore, land beside the
+   target with galleys in escort, then attack as usual.
 
 ## Roadmap
 Things deliberately left out of the first release, roughly in the order they should land:
@@ -129,8 +160,10 @@ Things deliberately left out of the first release, roughly in the order they sho
 3. **Market** — trade one resource for another, tribute to allies.
 4. **Teams and allies** — team victory, shared vision, allied bots that coordinate attacks.
 5. **Map variety** — rivers with fords, cliffs/elevation with height advantage, relics or huntable animals.
-6. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
-7. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
+   (Islands shipped.)
+6. **Building redesign** — a distinct silhouette per building; proposal awaiting approval.
+7. **Scenario/campaign mode** — a short chain of authored maps with objectives that teaches the game.
+8. **Replay/spectate and a PWA manifest** — installable on phones, offline play.
 
 ## What is original here
 All artwork, audio, text, balance and code are original: every graphic is drawn procedurally at runtime and every

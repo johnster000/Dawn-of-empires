@@ -87,6 +87,7 @@ const UI = {
     const $ = this.$;
     const opt = (sel, list) => { sel.innerHTML = ''; for (const [v, t] of list) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); } };
     opt($('set-size'), Object.entries(MAP_SIZES).map(([k, v]) => [k, `${v.name} (${v.w}×${v.h})`]));
+    opt($('set-maptype'), [['land', 'Continent'], ['islands', 'Islands — one each, rich isles between']]);
     opt($('set-terrain'), Object.entries(TERRAINS).map(([k, v]) => [k, v.name]));
     opt($('set-enemies'), [[1, '1 enemy'], [2, '2 enemies'], [3, '3 enemies'], [4, '4 enemies'], [5, '5 enemies']]);
     opt($('set-difficulty'), [['easy', 'Easy — a gentle neighbour'], ['normal', 'Normal — builds and raids'], ['hard', 'Hard — fast, aggressive, sharper economy']]);
@@ -98,13 +99,13 @@ const UI = {
     opt($('set-faction'), [['random', 'Random'], ...Object.keys(FACTIONS).map((k) => [k, FACTIONS[k].name])]);
     let saved = null; try { saved = JSON.parse(localStorage.getItem('anvil-settings') || 'null'); } catch (e) {}
     const s = Object.assign({}, Game.defaults, saved || {});
-    $('set-size').value = s.mapSize; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-faction').value = FACTIONS[s.faction] ? s.faction : 'random'; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
+    $('set-size').value = s.mapSize; $('set-maptype').value = s.mapType === 'islands' ? 'islands' : 'land'; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-faction').value = FACTIONS[s.faction] ? s.faction : 'random'; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
     const blurb = () => { $('terrain-blurb').textContent = TERRAINS[$('set-terrain').value].blurb; const f = FACTIONS[$('set-faction').value]; $('faction-blurb').textContent = f ? `${f.blurb} ${f.bonus} Unique warrior: ${UNITS[f.unique].name} (${BUILDINGS[UNITS[f.unique].from].name}).` : 'A people chosen at random when the game begins.'; };
     $('set-terrain').onchange = blurb; $('set-faction').onchange = blurb; blurb();
   },
   readSetup() {
     const $ = this.$;
-    const s = { mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, faction: $('set-faction').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
+    const s = { mapType: $('set-maptype').value, mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, faction: $('set-faction').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
     try { localStorage.setItem('anvil-settings', JSON.stringify(s)); } catch (e) {}
     return Object.assign({}, Game.defaults, s);
   },
@@ -197,7 +198,8 @@ const UI = {
         stats.appendChild(this.stat('Armour', s.armor));
         stats.appendChild(this.stat('Range', s.range || 'melee'));
         stats.appendChild(this.stat('Speed', s.speed.toFixed(1)));
-        if (s.type === 'villager') stats.appendChild(this.stat('Carrying', s.carry.amt > 0 ? `${Math.floor(s.carry.amt)} ${s.carry.kind}` : '—'));
+        if (s.type === 'villager' || s.def.gather) stats.appendChild(this.stat('Carrying', s.carry.amt > 0 ? `${Math.floor(s.carry.amt)} ${s.carry.kind}` : '—'));
+        if (s.cargo) stats.appendChild(this.stat('Aboard', `${s.cargo.length} / ${s.def.capacity}`));
         el.appendChild(stats);
         el.appendChild(U.el('div', 'sel-activity', this.activity(s)));
       } else {
@@ -279,8 +281,9 @@ const UI = {
   },
   stat(label, value, title) { const d = U.el('div', 'stat'); d.appendChild(U.el('span', 'label', label)); d.appendChild(U.el('span', 'value', String(value))); if (title) d.title = title; return d; },
   activity(u) {
-    const o = u.order; if (!o) return u.def.cls === 'villager' ? 'Idle — waiting for orders' : 'Standing guard';
-    if (o.type === 'move') return 'Moving'; if (o.type === 'attackmove') return 'Advancing';
+    const o = u.order; if (!o) return u.def.cls === 'villager' ? 'Idle — waiting for orders' : u.def.naval ? 'At anchor' : 'Standing guard';
+    if (o.type === 'move') return u.def.naval ? 'Sailing' : 'Moving'; if (o.type === 'attackmove') return 'Advancing';
+    if (o.type === 'board') return 'Going aboard'; if (o.type === 'unload') return 'Sailing to land ' + (u.cargo ? u.cargo.length : 0);
     if (o.type === 'attack') return 'Attacking ' + (o.target ? o.target.def.name : '');
     if (o.type === 'build') return (o.bld && o.bld.built ? 'Repairing ' : 'Building ') + (o.bld ? o.bld.def.name : '');
     if (o.type === 'gather') { const r = o.res; if (o.phase === 'return') return 'Returning ' + (u.carry.kind || ''); const k = rk(r) || ''; return { tree: 'Chopping wood', berry: 'Picking berries', stone: 'Quarrying stone', gold: 'Mining gold', farm: 'Farming', fish: 'Fishing' }[k] || 'Gathering'; }
@@ -311,7 +314,9 @@ const UI = {
       } else {
         if (vill.length) cmds.push({ label: 'Build', glyph: '⚒', desc: 'Houses, farms, camps and workshops.', onClick: () => { Game.buildMenu = 'main'; this.refreshCommands(); } });
         if (vill.length) cmds.push({ label: 'Defences', glyph: '🛡', desc: 'Walls, gates, towers and keeps.', onClick: () => { Game.buildMenu = 'defence'; this.refreshCommands(); } });
-        if (mil.length) cmds.push({ label: 'Attack move', glyph: '⚔', desc: 'Advance to a point, fighting anything met on the way.', active: Game.mode === 'attackmove', onClick: () => { Game.mode = Game.mode === 'attackmove' ? null : 'attackmove'; this.refreshCommands(); } });
+        const loaded = units.filter((u) => u.cargo && u.cargo.length);
+        if (loaded.length) cmds.push({ label: 'Unload', glyph: '⇲', desc: 'Put everyone ashore at the nearest bit of coast.', onClick: () => { for (const s of loaded) Sim.setOrder(s, { type: 'unload', x: s.x, y: s.y, region: 0 }); Sfx.play('ack'); this.refreshCommands(); } });
+        if (mil.some((u) => !u.def.noAttack)) cmds.push({ label: 'Attack move', glyph: '⚔', desc: 'Advance to a point, fighting anything met on the way.', active: Game.mode === 'attackmove', onClick: () => { Game.mode = Game.mode === 'attackmove' ? null : 'attackmove'; this.refreshCommands(); } });
         if (units.some((u) => u.def.cls === 'villager' || u.def.cls === 'infantry' || u.def.cls === 'archer')) cmds.push({ label: 'Garrison', glyph: '⛫', desc: 'Pick your Town Hall, a tower or a keep to shelter inside it.', active: Game.mode === 'garrison', onClick: () => { Game.mode = Game.mode === 'garrison' ? null : 'garrison'; this.refreshCommands(); } });
         if (vill.length) cmds.push({ label: 'Repair', glyph: '🔧', desc: 'Pick one of your buildings to mend it.', active: Game.mode === 'repair', onClick: () => { Game.mode = Game.mode === 'repair' ? null : 'repair'; this.refreshCommands(); } });
         cmds.push({ label: 'Stop', glyph: '■', desc: 'Stop and stand still.', onClick: () => { for (const u of units) Sim.idle(u); Sfx.play('ack'); this.selDirty = true; } });

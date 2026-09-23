@@ -22,6 +22,16 @@ const UNITS = {
   knight:    { name: 'Knight',     cls: 'cavalry',  hp: 110, atk: 12, armor: 2, range: 0, rate: 1.3, speed: 2.3, sight: 7,
                cost: { food: 80, gold: 75 }, time: 32, age: 2, from: 'stables', bonus: { archer: 1.5, siege: 1.5 },
                desc: 'Armoured cavalry. The hammer of the Forge Age.' },
+  // boats: built at a dock, and never leave the water
+  fishboat:  { name: 'Fishing Boat', cls: 'ship', naval: true, noAttack: true, hp: 60, atk: 0, armor: 0, range: 0, rate: 1, speed: 2.0, sight: 6,
+               cost: { wood: 60 }, time: 25, age: 0, from: 'dock', gather: ['fish'], carry: 20,
+               desc: 'Fishes the shoals out in open water, where villagers can\u2019t reach, and brings the catch to a dock.' },
+  transport: { name: 'Transport', cls: 'ship', naval: true, noAttack: true, hp: 160, atk: 0, armor: 2, range: 0, rate: 1, speed: 1.9, sight: 6,
+               cost: { wood: 125 }, time: 35, age: 0, from: 'dock', capacity: 8,
+               desc: 'Carries up to eight people or soldiers across the water. Right-click it with land units to board; right-click a shore to land them.' },
+  galley:    { name: 'War Galley', cls: 'ship', naval: true, hp: 140, atk: 7, armor: 1, range: 5, rate: 2.0, speed: 2.1, sight: 8,
+               cost: { wood: 110, gold: 40 }, time: 32, age: 1, from: 'dock', bonus: { ship: 1.5 },
+               desc: 'An oared warship with archers aboard. Sinks boats and harries the shore.' },
   // unique warriors, one per people (see factions.js)
   praetorian: { name: 'Praetorian', cls: 'infantry', faction: 'romans', hp: 75, atk: 7, armor: 3, range: 0, rate: 1.4, speed: 1.35, sight: 5,
                cost: { food: 60, gold: 30 }, time: 26, age: 1, from: 'barracks', bonus: { archer: 1.25 },

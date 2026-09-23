@@ -12,6 +12,8 @@ const BUILDINGS = {
                 desc: 'Drop-off point for food. Build it beside berries or farms.', dropoff: ['food'], sight: 4 },
   lumbercamp: { name: 'Lumber Camp',  size: 2, hp: 300,  armor: 1, cost: { wood: 100 }, time: 35, age: 0, shape: 'camp',
                 desc: 'Drop-off point for wood. Build it at the edge of a forest.', dropoff: ['wood'], sight: 4 },
+  dock:       { name: 'Dock',         size: 2, hp: 800,  armor: 2, cost: { wood: 125 }, time: 40, age: 0, shape: 'dock', water: true,
+                desc: 'Built on water against the shore. Builds boats and takes in fish.', dropoff: ['food'], trains: ['fishboat', 'transport', 'galley'], sight: 6 },
   miningcamp: { name: 'Mining Camp',  size: 2, hp: 300,  armor: 1, cost: { wood: 100 }, time: 35, age: 0, shape: 'camp',
                 desc: 'Drop-off point for stone and gold. Build it beside a deposit.', dropoff: ['stone', 'gold'], sight: 4 },
   barracks:   { name: 'Barracks',     size: 3, hp: 700,  armor: 2, cost: { wood: 150 }, time: 50, age: 0, shape: 'longhouse',
@@ -43,5 +45,5 @@ const BUILDINGS = {
 };
 
 /* Order buildings appear in the villager build menu. */
-const BUILD_MENU = ['house', 'farm', 'granary', 'lumbercamp', 'miningcamp', 'barracks', 'range', 'stables', 'blacksmith', 'library', 'workshop', 'townhall', 'monument'];
+const BUILD_MENU = ['house', 'farm', 'granary', 'lumbercamp', 'miningcamp', 'dock', 'barracks', 'range', 'stables', 'blacksmith', 'library', 'workshop', 'townhall', 'monument'];
 const DEFENCE_MENU = ['palisade', 'palisadegate', 'stonewall', 'stonegate', 'tower', 'keep'];

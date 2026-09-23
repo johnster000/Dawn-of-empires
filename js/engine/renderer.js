@@ -697,6 +697,28 @@ const Renderer = {
     this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s / 2, s / 2, 92)], '#e0c060'); this.poly([this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#b08a30'); this.poly([this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#d8b040');
     this.flagSpot(s / 2, s / 2, 91);
   },
+  /* A plank pier on piles with a boat shed, a hand crane and nets drying on a rack. */
+  shape_dock(b, age, p) {
+    const s = b.size, g = this.g, stone = b.ageVisual >= 2, deck = stone ? '#9a948a' : '#9c7a4a', deckD = stone ? '#6e6960' : '#6a5034';
+    // piles standing in the water, then the deck on them
+    g.strokeStyle = '#3a2a1a'; g.lineWidth = 3;
+    for (const x of [0.12, s / 2, s - 0.12]) for (const y of [0.12, s / 2, s - 0.12]) { const a = this.P(x, y, -5), c = this.P(x, y, 4); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); g.stroke(); }
+    this.box(0, 0, s, s, 3, 3, deckD, U.shade(deckD, -0.2), deck);
+    g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; for (let k = 0.25; k < s; k += 0.25) { const a = this.P(k, 0, 6), c = this.P(k, s, 6); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); g.stroke(); }
+    // boat shed on the back half
+    this.box(0.1, 0.1, 1.0, s - 0.3, 6, 14, age.wall, age.wallDark, age.roof);
+    this.gable(0.1, 0.1, 1.0, s - 0.3, 20, 10, age.roof, age.roofDark, 0.08);
+    const d = this.P(1.0, s * 0.45, 6); g.fillStyle = '#1a1410'; g.beginPath(); g.moveTo(d[0] - 5, d[1] - 1); g.lineTo(d[0] - 5, d[1] - 10); g.quadraticCurveTo(d[0], d[1] - 15, d[0] + 5, d[1] - 12); g.lineTo(d[0] + 5, d[1] - 3); g.fill();
+    // crane at the front corner
+    const c0 = this.P(s - 0.3, s - 0.3, 6), c1 = this.P(s - 0.3, s - 0.3, 34), c2 = this.P(s + 0.1, s - 0.9, 30);
+    g.strokeStyle = '#5a3f22'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(c0[0], c0[1]); g.lineTo(c1[0], c1[1]); g.lineTo(c2[0], c2[1]); g.stroke();
+    g.strokeStyle = '#c8b89a'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(c2[0], c2[1]); g.lineTo(c2[0], c2[1] + 16); g.stroke(); g.fillStyle = '#8a6a44'; g.fillRect(c2[0] - 3, c2[1] + 15, 6, 4);
+    // net rack and a coil of rope
+    const n0 = this.P(1.3, 0.3, 6), n1 = this.P(1.8, 0.3, 6); g.strokeStyle = '#5a3f22'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(n0[0], n0[1]); g.lineTo(n0[0], n0[1] - 12); g.lineTo(n1[0], n1[1] - 12); g.lineTo(n1[0], n1[1]); g.stroke();
+    g.strokeStyle = 'rgba(220,210,180,0.75)'; g.lineWidth = 0.7; g.beginPath(); for (let k = 0; k <= 5; k++) { const t = k / 5; g.moveTo(U.lerp(n0[0], n1[0], t), U.lerp(n0[1], n1[1], t) - 12); g.lineTo(U.lerp(n0[0], n1[0], t), U.lerp(n0[1], n1[1], t) - 4); } g.stroke();
+    const r = this.P(s - 0.5, 0.5, 6); this.ell(r[0], r[1] - 1, 4, 2, '#b8a070', '#6a5a3a');
+    this.flagSpot(0.55, (s - 0.2) / 2, 29);
+  },
   /* Wall pieces join up with their neighbours: a run from the middle of the square to every connected side or
      corner, so a line of pieces reads as one continuous wall, diagonals included. */
   wallCols(b) { return b.def.wall === 'stone' ? { wall: '#9a948a', dark: '#6e6960', top: '#b8b2a6', mat: 'stone' } : { wall: '#8d6c3e', dark: '#5f4728', top: '#a88852', mat: 'plank' }; },
@@ -835,7 +857,7 @@ const Renderer = {
   },
 
   /* ---- units ---- */
-  drawRing(u) { this.at(u.x, u.y, 0); const g = this.g; g.lineWidth = 1.2; this.ell(0, 1, u.def.cls === 'cavalry' ? 16 : 11, u.def.cls === 'cavalry' ? 8 : 5.5, null, '#f4f0e0'); },
+  drawRing(u) { this.at(u.x, u.y, 0); const g = this.g; g.lineWidth = 1.2; const big = u.def.naval ? 22 : u.def.cls === 'cavalry' ? 16 : 11; this.ell(0, 1, big, big / 2, null, '#f4f0e0'); },
   /* Which tool a villager holds, and whether they are mid-task (which drives the work cycle). */
   unitPose(u) {
     const o = u.order; let tool = 'axe', working = false;
@@ -854,10 +876,10 @@ const Renderer = {
     let swing = u.swing > 0.2 ? 2 : u.swing > 0 ? 1 : 0;
     if (pose.working) swing = 3 + (Math.floor((u.anim % (Math.PI * 2)) / (Math.PI * 2) * 4) & 3);
     const carry = u.carry.amt > 0 ? u.carry.kind : '';
-    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + pose.tool;
+    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + pose.tool + (u.def.naval ? '|' + (u.moving ? 1 : 0) + (u.cargo && u.cargo.length ? 'c' : '') : '');
     let sp = this.sprites.get(key);
     if (!sp) {
-      const k = this.spriteK(zq), W = Math.ceil(72 * k), H = Math.ceil(76 * k), ax = W / 2, ay = H - 8 * k;
+      const k = this.spriteK(zq), W = Math.ceil((u.def.naval ? 128 : 72) * k), H = Math.ceil((u.def.naval ? 96 : 76) * k), ax = W / 2, ay = H - (u.def.naval ? 20 : 8) * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
@@ -871,7 +893,7 @@ const Renderer = {
     }
     const [sx, sy] = this.toScreen(u.x, u.y, 0);
     this.stamp(sp, sx, sy); u.spr = sp;
-    u.sx = sx; u.sy = sy; u.sh = (u.def.cls === 'cavalry' ? 46 : u.def.cls === 'siege' ? 26 : 34) * z;
+    u.sx = sx; u.sy = sy; u.sh = (u.def.naval ? 30 : u.def.cls === 'cavalry' ? 46 : u.def.cls === 'siege' ? 26 : 34) * z;
   },
   /* Is this unit hidden behind a tree crown or a building that draws after it? */
   occluded(u) {
@@ -898,6 +920,7 @@ const Renderer = {
     const g = this.g, col = p.color, age = p.age, cls = u.def.cls;
     tool = tool || 'axe'; const bend = working && (tool === 'hoe' || tool === 'basket') ? 1 : 0; // stooping over the field or bush
     const skin = ['#e0b898', '#cfa07a', '#a8744c', '#7a5236'][u.id % 4], hair = ['#3a2a1a', '#6a4a2a', '#c9a060', '#1a1a1a'][(u.id >> 2) % 4];
+    if (cls === 'ship') { this.ship(u, col, flip, walk, swing); return; }
     this.castShadow(0, 0, cls === 'cavalry' ? 26 : cls === 'siege' ? 26 : 12, cls === 'cavalry' ? 5 : 3);
     g.save(); g.scale(flip, 1); g.lineCap = 'round'; g.lineJoin = 'round';
     if (cls === 'siege') { this.catapult(u, col); g.restore(); return; }
@@ -1007,6 +1030,49 @@ const Renderer = {
     g.strokeStyle = '#3a2a1a'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x + 4, y - 22); g.lineTo(x + 18, y - 28); g.stroke();
     this.ell(x + 1, y - 13, 1.3, 1.3, light);
   },
+  /* Boats, drawn side-on and flipped to face their heading, riding low in the water. */
+  ship(u, col, flip, walk, swing) {
+    const g = this.g, T = u.type, moving = u.moving, wood = '#6a4a2a', woodD = '#4a3320', woodL = '#8a6a44';
+    const L = T === 'galley' ? 24 : T === 'transport' ? 20 : 14, beam = T === 'transport' ? 7 : 5;
+    // the water around the hull: a dark reflection, and a wake behind when under way
+    const sc = T === 'fishboat' ? 1.15 : 1.35; g.save(); g.scale(sc, sc);
+    this.ell(0, 1, L + 4, beam + 1.5, 'rgba(10,30,50,0.35)');
+    g.save(); g.scale(flip, 1);
+    if (moving) { g.strokeStyle = 'rgba(235,245,255,0.8)'; g.lineWidth = 1.3; g.beginPath(); g.moveTo(-L - 2, -1); g.lineTo(-L - 14, -5); g.moveTo(-L - 2, 2); g.lineTo(-L - 14, 5); g.moveTo(L + 1, 0); g.lineTo(L + 5, -2); g.moveTo(L + 1, 1); g.lineTo(L + 5, 3); g.stroke(); }
+    // hull: the near side, a darker strake along the waterline, and the deck
+    g.fillStyle = woodD; g.beginPath(); g.moveTo(-L, -4); g.quadraticCurveTo(-L + 2, 3, -L + 6, 3); g.lineTo(L - 5, 3); g.quadraticCurveTo(L, 2, L + 2, -6); g.lineTo(L - 2, -5); g.lineTo(-L + 1, -5); g.closePath(); g.fill();
+    g.fillStyle = wood; g.beginPath(); g.moveTo(-L, -4); g.lineTo(L + 2, -6); g.lineTo(L - 2, -5 - beam * 0.3); g.lineTo(-L + 1, -5 - beam * 0.3); g.closePath(); g.fill();
+    this.poly([[-L + 1, -5 - beam * 0.3], [L - 2, -5 - beam * 0.3], [L - 4, -5 - beam], [-L + 3, -5 - beam]], woodL);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-L + 4, -1, L * 2 - 9, 1.5);
+    g.fillStyle = col.main; g.fillRect(-L + 5, -4.5, L * 2 - 11, 1.4); // a painted band in team colour
+    if (T === 'galley') {
+      // oars sweeping in time, shields along the rail, a bronze ram and a striped square sail
+      const sweep = moving ? walk * 2.5 : 0;
+      g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.1; g.beginPath(); for (let i = -3; i <= 3; i++) { g.moveTo(i * 5, -3); g.lineTo(i * 5 + sweep - 2, 5); } g.stroke();
+      for (let i = -3; i <= 3; i++) this.ell(i * 5 + 1, -7, 2, 2, i % 2 ? col.main : col.light, '#2e2119');
+      this.poly([[L + 1, -2], [L + 7, -1], [L + 1, 1]], '#b08a4a');
+      g.strokeStyle = woodD; g.lineWidth = 1.8; g.beginPath(); g.moveTo(-2, -9); g.lineTo(-2, -34); g.stroke();
+      g.fillStyle = '#e8e0cc'; g.fillRect(-11, -33, 18, 16); g.fillStyle = col.main; for (let k = 0; k < 3; k++) g.fillRect(-11 + k * 6, -33, 3, 16);
+      g.strokeStyle = woodD; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-13, -33); g.lineTo(9, -33); g.stroke();
+      this.poly([[-L - 1, -5], [-L - 5, -12], [-L + 2, -7]], woodL);
+    } else if (T === 'transport') {
+      // a broad barge: crates and a canopy, people aboard when laden, one square sail
+      g.fillStyle = '#9c7a4a'; g.fillRect(-12, -13, 7, 6); g.fillRect(6, -12, 6, 5); g.fillStyle = '#b8955c'; g.fillRect(-12, -13, 7, 1.5);
+      if (u.cargo && u.cargo.length) for (let i = 0; i < 4; i++) { this.ell(-3 + i * 3.4, -13, 1.8, 2, ['#e0b898', '#a8744c', '#cfa07a', '#7a5236'][i]); g.fillStyle = col.main; g.fillRect(-4.6 + i * 3.4, -11.5, 3.2, 3.5); }
+      g.strokeStyle = woodD; g.lineWidth = 1.8; g.beginPath(); g.moveTo(1, -10); g.lineTo(1, -36); g.stroke();
+      g.fillStyle = col.main; g.beginPath(); g.moveTo(-9, -35); g.lineTo(10, -35); g.quadraticCurveTo(12, -26, 10, -18); g.lineTo(-9, -18); g.quadraticCurveTo(-7, -26, -9, -35); g.fill();
+      g.fillStyle = col.light; g.fillRect(-9, -28, 19, 2);
+    } else {
+      // a fishing boat: one small sail, a net over the side, and the catch in the bottom when full
+      g.strokeStyle = woodD; g.lineWidth = 1.5; g.beginPath(); g.moveTo(2, -8); g.lineTo(2, -28); g.stroke();
+      this.poly([[3, -27], [13, -11], [3, -10]], '#e8e0cc'); g.fillStyle = col.main; g.fillRect(3, -14, 7, 2);
+      g.strokeStyle = 'rgba(220,210,180,0.8)'; g.lineWidth = 0.7; g.beginPath(); for (let k = 0; k < 4; k++) { g.moveTo(-9 + k * 2, -6); g.lineTo(-12 + k * 3, 3); } g.stroke();
+      if (u.carry && u.carry.amt > 0) { this.ell(-3, -9, 3, 1.3, '#c8d8e8'); this.ell(-6, -9, 2.5, 1.1, '#a8b8c8'); }
+      if (u.order && u.order.phase === 'gathering') { g.strokeStyle = '#8a6a3a'; g.lineWidth = 1; g.beginPath(); g.moveTo(-5, -9); g.lineTo(-14, -4 + swing * 2); g.stroke(); }
+      this.ell(-4, -11, 1.8, 2, '#cfa07a'); g.fillStyle = '#8a7a5a'; g.fillRect(-5.5, -9.5, 3, 3);
+    }
+    g.restore(); g.restore();
+  },
   catapult(u, col) {
     const g = this.g;
     g.fillStyle = '#6a4a2a'; g.fillRect(-13, -9, 26, 5);
@@ -1109,7 +1175,7 @@ const Renderer = {
       if (u.dead || u.sx == null || (filter && !filter(u))) continue;
       if (u.owner !== Game.human && !World.visible[World.idx(Math.floor(u.x), Math.floor(u.y))] && !Game.settings.reveal) continue;
       const dx = Math.abs(sx - u.sx), dy = sy - (u.sy - u.sh / 2);
-      if (dx < 12 * z && Math.abs(dy) < u.sh / 2 + 4 * z) { const d = dx + Math.abs(dy) * 0.5; if (d < bd) { bd = d; best = u; } }
+      if (dx < (u.def.naval ? 20 : 12) * z && Math.abs(dy) < u.sh / 2 + 4 * z) { const d = dx + Math.abs(dy) * 0.5; if (d < bd) { bd = d; best = u; } }
     }
     return best;
   },

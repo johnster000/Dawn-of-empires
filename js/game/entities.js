@@ -34,7 +34,7 @@ class Player {
   pay(cost) { for (const k in cost) this.res[k] -= cost[k]; }
   refund(cost) { for (const k in cost) this.res[k] += cost[k]; }
   popCap() { let c = 0; for (const b of Game.buildings) if (!b.dead && b.built && b.owner === this.id) c += b.def.pop || 0; return Math.min(c, Game.settings.popCap); }
-  pop() { let n = 0; for (const u of Game.units) if (!u.dead && u.owner === this.id) n++; for (const b of Game.buildings) if (!b.dead && b.owner === this.id) { n += b.garrison.length; for (const q of b.queue) if (q.kind === 'unit') n++; } return n; }
+  pop() { let n = 0; for (const u of Game.units) if (!u.dead && u.owner === this.id) { n++; if (u.cargo) n += u.cargo.length; } for (const b of Game.buildings) if (!b.dead && b.owner === this.id) { n += b.garrison.length; for (const q of b.queue) if (q.kind === 'unit') n++; } return n; }
   hasTech(id) { return this.techs.has(id); }
   applyTech(id) {
     const t = TECHS[id]; if (!t || this.techs.has(id)) return;
@@ -62,7 +62,7 @@ const Ent = {
   nextId: 1,
   unit(type, owner, x, y) {
     const def = UNITS[type];
-    const u = { id: Ent.nextId++, kind: 'unit', type, def, owner, x, y, hp: def.hp, maxHp: def.hp, dead: false,
+    const u = { id: Ent.nextId++, kind: 'unit', type, def, owner, x, y, hp: def.hp, maxHp: def.hp, dead: false, cargo: def.capacity ? [] : null,
       order: null, path: null, carry: { kind: null, amt: 0 }, cd: 0, face: 0.8, anim: 0, moving: false, scanT: Math.random() * 0.4, idleT: 0, swing: 0, stuck: 0 };
     Sim.refreshUnit(u);
     return u;
@@ -89,13 +89,15 @@ const Sim = {
     u.speed = d.speed * (1 + (c === 'villager' ? m.villagerSpeed : 0));
     u.maxHp = d.hp + (c === 'villager' ? m.villagerHp : 0);
     if (u.maxHp !== oldMax) u.hp += u.maxHp - oldMax;
-    u.carryCap = BASE_CARRY + m.carry;
+    u.carryCap = d.carry || BASE_CARRY + m.carry;
   },
+  /* Where a unit may be: ships on open water, everyone else on land. */
+  pass(u, x, y) { return u.def.naval ? World.sailable(x, y) : World.passable(x, y, u.owner); },
   effectiveRange(u) { return u.range > 0 ? u.range : 0; },
 
   /* Nobody stands inside anybody else: overlapping units are nudged apart each tick. Units busy at a task hold
      their ground; walkers and idlers give way. */
-  radius(u) { return u.def.cls === 'cavalry' ? 0.32 : u.def.cls === 'siege' ? 0.38 : 0.24; },
+  radius(u) { return u.def.naval ? 0.45 : u.def.cls === 'cavalry' ? 0.32 : u.def.cls === 'siege' ? 0.38 : 0.24; },
   tileUnits: new Map(),
   /* Is somebody other than `except` standing on this tile? */
   occupied(x, y, except) {
@@ -120,7 +122,7 @@ const Sim = {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const b = buckets.get((uy + dy) * W + ux + dx); if (!b) continue;
         for (const v of b) {
-          if (v.id <= u.id || v.dead) continue;
+          if (v.id <= u.id || v.dead || !u.def.naval !== !v.def.naval) continue; // ships and walkers never shove each other
           let ddx = v.x - u.x, ddy = v.y - u.y; const min = ru + Sim.radius(v), d2 = ddx * ddx + ddy * ddy;
           if (d2 >= min * min) continue;
           let d = Math.sqrt(d2); if (d < 0.01) { const a = (u.id * 0.7 + v.id * 1.3) % 6.283; ddx = Math.cos(a); ddy = Math.sin(a); d = 1; }
@@ -135,8 +137,8 @@ const Sim = {
             const rx = nx * (1 - k) - ny * t * k, ry = ny * (1 - k) + nx * t * k, rl = Math.hypot(rx, ry) || 1; nx = rx / rl; ny = ry / rl;
           }
           const ku = fu && fv ? 0.5 : fu ? 0 : fv ? 1 : 0.5, kv = fu && fv ? 0.5 : fv ? 0 : fu ? 1 : 0.5;
-          if (ku) { const nxp = u.x - nx * push * ku, nyp = u.y - ny * push * ku; if (World.passable(Math.floor(nxp), Math.floor(nyp), u.owner)) { u.x = nxp; u.y = nyp; } if (!u.order) u.shoved = 1; }
-          if (kv) { const nxp = v.x + nx * push * kv, nyp = v.y + ny * push * kv; if (World.passable(Math.floor(nxp), Math.floor(nyp), v.owner)) { v.x = nxp; v.y = nyp; } if (!v.order) v.shoved = 1; }
+          if (ku) { const nxp = u.x - nx * push * ku, nyp = u.y - ny * push * ku; if (Sim.pass(u, Math.floor(nxp), Math.floor(nyp))) { u.x = nxp; u.y = nyp; } if (!u.order) u.shoved = 1; }
+          if (kv) { const nxp = v.x + nx * push * kv, nyp = v.y + ny * push * kv; if (Sim.pass(v, Math.floor(nxp), Math.floor(nyp))) { v.x = nxp; v.y = nyp; } if (!v.order) v.shoved = 1; }
         }
       }
     }
@@ -152,15 +154,16 @@ const Sim = {
   claim(u, spot) { Sim.release(u); u.spotKey = Sim.key(spot[0], spot[1]); Sim.claims.set(u.spotKey, u); },
   rebuildClaims() { Sim.claims.clear(); for (const u of Game.units) { u.spotKey = null; const o = u.order; if (o && o.type === 'gather' && o.spot) Sim.claim(u, o.spot); } },
   /* The tiles a worker can stand on to reach this resource. */
-  resSpots(r) {
+  resSpots(r, u) {
     const out = [];
-    for (const [dx, dy] of U.DIRS) { const x = r.x + dx, y = r.y + dy; if (World.passable(x, y)) out.push([x, y]); }
+    for (const [dx, dy] of U.DIRS) { const x = r.x + dx, y = r.y + dy; if (u && u.def.naval ? World.sailable(x, y) : World.passable(x, y)) out.push([x, y]); }
     return out;
   },
   /* The free standing tile nearest this worker, or null when every one is claimed. */
   freeSpot(u, r) {
     let best = null, bd = Infinity;
-    for (const s of Sim.resSpots(r)) {
+    if (u.def.gather && u.def.gather.length && !u.def.gather.includes(rk(r))) return null; // boats only fish
+    for (const s of Sim.resSpots(r, u)) {
       const holder = Sim.claims.get(Sim.key(s[0], s[1]));
       if (holder && holder !== u && !holder.dead) continue;
       const d = U.dist2(s[0] + 0.5, s[1] + 0.5, u.x, u.y); if (d < bd) { bd = d; best = s; }
@@ -219,7 +222,7 @@ const Sim = {
   stepAside(u) {
     const cx = Math.floor(u.x), cy = Math.floor(u.y);
     const clear = (x, y) => {
-      if (!World.passable(x, y, u.owner) || Sim.claims.has(Sim.key(x, y))) return false;
+      if (!Sim.pass(u, x, y) || Sim.claims.has(Sim.key(x, y))) return false;
       for (const v of Game.units) if (v !== u && !v.dead && Math.floor(v.x) === x && Math.floor(v.y) === y) return false;
       return true;
     };
@@ -236,7 +239,7 @@ const Sim = {
     else {
       for (let x = foot.x0 - 1; x <= foot.x1 + 1; x++) for (let y = foot.y0 - 1; y <= foot.y1 + 1; y++) {
         if (x >= foot.x0 && x <= foot.x1 && y >= foot.y0 && y <= foot.y1) continue;
-        if (!World.passable(x, y, u.owner)) continue;
+        if (!Sim.pass(u, x, y)) continue;
         const d = U.dist2(x, y, ux, uy); if (d < bd) { bd = d; goal = [x, y]; }
       }
     }
@@ -249,17 +252,18 @@ const Sim = {
   },
   pathTo(u, gx, gy) {
     const sx = Math.floor(u.x), sy = Math.floor(u.y);
-    if (!World.passable(gx, gy, u.owner)) { const n = U.nearestTile(gx, gy, 6, (x, y) => World.passable(x, y, u.owner)); if (!n) return false; gx = n[0]; gy = n[1]; }
+    const here = World.regionAt(sx, sy), ok = (x, y) => Sim.pass(u, x, y) && (!here || World.regionAt(x, y) === here);
+    if (!ok(gx, gy)) { const n = U.nearestTile(gx, gy, 6, ok); if (!n) return false; gx = n[0]; gy = n[1]; }
     if (sx === gx && sy === gy) { u.path = []; u.pathGoal = [gx, gy]; return true; }
     // a step or two away with a clear line: walk it rather than run a search
     if (Math.abs(gx - sx) <= 3 && Math.abs(gy - sy) <= 3) {
-      const quick = U.walkLine(sx, sy, gx, gy, (x, y) => World.passable(x, y, u.owner), 6);
+      const quick = U.walkLine(sx, sy, gx, gy, (x, y) => Sim.pass(u, x, y), 6);
       if (quick) { u.path = quick; u.pathGoal = [gx, gy]; return true; }
     }
     // Long searches are rationed: past the budget a unit gets a shallow, best-effort route and heads roughly the
     // right way, which it refines on a later tick. Keeps a crowd of orders from spiking a frame.
     const cap = Sim.pathBudget-- > 0 ? 5000 : 800;
-    const path = U.astar(sx, sy, gx, gy, World.w, World.h, (x, y) => World.passable(x, y, u.owner), cap);
+    const path = U.astar(sx, sy, gx, gy, World.w, World.h, (x, y) => Sim.pass(u, x, y), cap);
     if (!path) return false;
     u.path = path; u.pathGoal = [gx, gy];
     return true;
@@ -283,7 +287,7 @@ const Sim = {
     while (u.path.length && u.path[0][0] === ux && u.path[0][1] === uy) u.path.shift();
     if (!u.path.length) { u.moving = false; return 'arrived'; }
     const [tx, ty] = u.path[0];
-    if (!World.passable(tx, ty, u.owner)) {
+    if (!Sim.pass(u, tx, ty)) {
       // something was built in the way: re-path to the same goal
       if (u.pathGoal && Sim.pathTo(u, u.pathGoal[0], u.pathGoal[1])) return 'moving';
       u.path = null; u.moving = false; return 'blocked';
@@ -334,7 +338,7 @@ const Sim = {
     this.pathBudget = 10;
     this.listT -= dt; if (this.listT > 0) return;
     this.listT = 0.5;
-    this.soldiers = Game.units.filter((u) => !u.dead && u.type !== 'villager');
+    this.soldiers = Game.units.filter((u) => !u.dead && u.type !== 'villager' && !u.def.noAttack && !u.def.naval);
     this.shelters = Game.players.map(() => []);
     for (const b of Game.buildings) if (!b.dead && b.built && b.def.garrison && this.shelters[b.owner]) this.shelters[b.owner].push(b);
   },
@@ -383,17 +387,19 @@ const Sim = {
         // a few shuffles is helpful; endlessly giving way in a busy crowd just looks like milling about
         if (u.asideT <= 0 && (u.asideN || 0) < 3) { u.asideT = 3; u.asideN = (u.asideN || 0) + 1; Sim.stepAside(u); }
       } else { u.calmT = (u.calmT || 0) + dt; if (u.calmT > 5) { u.calmT = 0; u.asideN = 0; } }
-      if (u.def.cls !== 'villager') Sim.scan(u, dt);
+      if (u.def.cls !== 'villager' && !u.def.noAttack) Sim.scan(u, dt);
       return;
     }
     switch (o.type) {
       case 'move': Sim.doMove(u, o, dt); break;
-      case 'attackmove': Sim.scan(u, dt); if (u.order === o) Sim.doMove(u, o, dt); break;
+      case 'attackmove': if (!u.def.noAttack) Sim.scan(u, dt); if (u.order === o) Sim.doMove(u, o, dt); break;
       case 'gather': Sim.doGather(u, o, dt); break;
       case 'build': Sim.doBuild(u, o, dt); break;
       case 'attack': Sim.doAttack(u, o, dt); break;
       case 'garrison': Sim.doGarrison(u, o, dt); break;
       case 'flee': Sim.doFlee(u, o, dt); break;
+      case 'board': Sim.doBoard(u, o, dt); break;
+      case 'unload': Sim.doUnload(u, o, dt); break;
     }
   },
 
@@ -407,7 +413,7 @@ const Sim = {
     // spot forever, so take the nearest free tile instead, and after a few tries just stop where we are.
     if (U.dist(u.x, u.y, o.x + 0.5, o.y + 0.5) < 2.5 && Sim.settledOn(o.x, o.y, u)) {
       o.reseat = (o.reseat || 0) + 1;
-      const free = o.reseat <= 4 && U.nearestTile(o.x, o.y, 3, (x, y) => World.passable(x, y, u.owner) && !Sim.occupied(x, y, u));
+      const free = o.reseat <= 4 && U.nearestTile(o.x, o.y, 3, (x, y) => Sim.pass(u, x, y) && !Sim.occupied(x, y, u));
       if (free) { o.x = free[0]; o.y = free[1]; u.path = null; }
       else { u.path = null; done(); }
     }
@@ -425,6 +431,7 @@ const Sim = {
     const r2 = radius * radius;
     for (const e of Game.units) {
       if (e.dead || e.owner === u.owner) continue;
+      if (!u.def.naval && e.def.naval && !(u.range > 0)) continue; // a swordsman can't fight a ship
       const d = U.dist2(u.x, u.y, e.x, e.y); if (d < bd && d <= r2) { bd = d; best = e; }
     }
     if (best && preferUnits) return best;
@@ -451,6 +458,7 @@ const Sim = {
     return best;
   },
   doAttack(u, o, dt) {
+    if (u.def.noAttack) { Sim.idle(u); return; }
     let t = o.target;
     if (t && t.dead && o.after && !o.after.dead) { o.target = t = o.after; o.after = null; u.path = null; u.stuck = 0; }
     if (!t || t.dead) { if (o.resume) Sim.setOrder(u, o.resume); else Sim.idle(u); return; }
@@ -510,6 +518,8 @@ const Sim = {
       Sim.setOrder(t, null); Sim.release(t);
       Game.effects.push({ kind: 'corpse', x: t.x, y: t.y, t: 0, dur: 6, color: owner.color.main, cls: t.def.cls });
       Sfx.play('die', t.x, t.y);
+      // a sunk transport takes its passengers down with it
+      if (t.cargo) { for (const c of t.cargo) { c.dead = true; c.inside = null; owner.stats.losses++; if (killer) killer.stats.kills++; } t.cargo = []; }
     } else {
       if (killer) killer.stats.razed++;
       while (t.garrison.length) Sim.ungarrison(t, t.garrison[0]);
@@ -534,7 +544,7 @@ const Sim = {
       if (rk(r) === 'farm' && r.worker && r.worker !== u) { Sim.retarget(u, o); return; }
       const farm = rk(r) === 'farm';
       // the claimed tile can be built over or flooded by a new building: take another one
-      if (!farm && (!o.spot || !World.passable(o.spot[0], o.spot[1]))) { const spot = Sim.freeSpot(u, r); if (!spot) { Sim.retarget(u, o); return; } o.spot = spot; Sim.claim(u, spot); u.path = null; }
+      if (!farm && (!o.spot || !Sim.pass(u, o.spot[0], o.spot[1]))) { const spot = Sim.freeSpot(u, r); if (!spot) { Sim.retarget(u, o); return; } o.spot = spot; Sim.claim(u, spot); u.path = null; }
       const there = () => (farm ? U.dist(u.x, u.y, r.x, r.y) <= 0.6 : Math.floor(u.x) === o.spot[0] && Math.floor(u.y) === o.spot[1]);
       const settle = () => { u.path = null; u.moving = false; o.phase = 'gathering'; if (!farm) { u.x = o.spot[0] + 0.5; u.y = o.spot[1] + 0.5; } u.face = Math.atan2((farm ? r.y : r.y + 0.5) - u.y, (farm ? r.x : r.x + 0.5) - u.x); };
       if (there()) { settle(); return; }
@@ -558,7 +568,11 @@ const Sim = {
       if (u.carry.amt >= u.carryCap - 0.001 || (r.amount <= 0)) { o.phase = 'return'; u.path = null; }
     } else if (o.phase === 'return') {
       const dOff = o.dropoff && !o.dropoff.dead && o.dropoff.built ? o.dropoff : (o.dropoff = Sim.nearestDropoff(u, u.carry.kind));
-      if (!dOff) { Game.notify(u.owner, 'No drop-off point for ' + u.carry.kind + '.', 'warn', u.x, u.y); Sim.idle(u); return; }
+      if (!dOff) {
+        // nowhere to take this load (carried over from another island, say): leave it and get on with the new job
+        if (r && r.amount > 0 && RES_KIND[rk(r)] !== u.carry.kind) { u.carry.amt = 0; o.phase = 'to'; u.path = null; return; }
+        Game.notify(u.owner, 'No drop-off point for ' + u.carry.kind + '.', 'warn', u.x, u.y); Sim.idle(u); return;
+      }
       if (Sim.distTo(u, dOff) <= REACH) {
         const p = Game.players[u.owner]; p.res[u.carry.kind] += u.carry.amt; p.stats.gathered[u.carry.kind] += u.carry.amt; u.carry.amt = 0; u.path = null;
         if (r && r.amount > 0 && !(rk(r) === 'farm' && (r.dead || !r.built))) o.phase = 'to'; else Sim.retarget(u, o);
@@ -578,19 +592,28 @@ const Sim = {
     let next = null;
     if (kind === 'farm') next = Sim.freeFarm(u, 14);
     else if (kind) next = Sim.nearestFree(u, kind, ox, oy, 16, old);
-    if (!next && (kind === 'berry' || kind === 'fish')) next = Sim.nearestFree(u, kind === 'berry' ? 'fish' : 'berry', ox, oy, 14, null) || Sim.freeFarm(u, 12);
+    if (!next && !u.def.naval && (kind === 'berry' || kind === 'fish')) next = Sim.nearestFree(u, kind === 'berry' ? 'fish' : 'berry', ox, oy, 14, null) || Sim.freeFarm(u, 12);
     if (next) { const carry = u.carry.amt, dropoff = o.dropoff; if (Sim.assignGather(u, next, dropoff, 16) && carry >= u.carryCap - 0.001) u.order.phase = 'return'; }
     else { if (u.carry.amt > 0) { Sim.setOrder(u, { type: 'gather', res: null, dropoff: o.dropoff, phase: 'return' }); u.order.phase = 'return'; } else { Sim.idle(u); Game.onIdleVillager(u); } }
   },
   freeFarm(u, radius) {
     let best = null, bd = radius * radius;
-    for (const b of Game.buildings) if (!b.dead && b.built && b.def.farm && b.owner === u.owner && (!b.worker || b.worker.dead || b.worker === u)) { const d = U.dist2(b.x, b.y, u.x, u.y); if (d < bd) { bd = d; best = b; } }
+    for (const b of Game.buildings) if (!b.dead && b.built && b.def.farm && b.owner === u.owner && (!b.worker || b.worker.dead || b.worker === u)) { const d = U.dist2(b.x, b.y, u.x, u.y); if (d < bd && World.regionAt(b.x, b.y) === World.regionAt(u.x, u.y)) { bd = d; best = b; } }
     return best;
   },
   nearestDropoff(u, kind) {
     let best = null, bd = Infinity;
-    for (const b of Game.buildings) if (!b.dead && b.built && b.owner === u.owner && b.def.dropoff && b.def.dropoff.includes(kind)) { const d = Sim.distTo(u, b); if (d < bd) { bd = d; best = b; } }
+    for (const b of Game.buildings) if (!b.dead && b.built && b.owner === u.owner && b.def.dropoff && b.def.dropoff.includes(kind) && (!u.def.naval || b.def.water) && Sim.canReach(u, b)) { const d = Sim.distTo(u, b); if (d < bd) { bd = d; best = b; } }
     return best;
+  },
+  /* Is there somewhere beside this building that the unit can get to? (Same island, or same sea.) */
+  canReach(u, b) {
+    const here = World.regionAt(u.x, u.y); if (!here) return true;
+    for (let x = b.tx - 1; x <= b.tx + b.size; x++) for (let y = b.ty - 1; y <= b.ty + b.size; y++) {
+      if (x >= b.tx && x < b.tx + b.size && y >= b.ty && y < b.ty + b.size) continue;
+      if (Sim.pass(u, x, y) && World.regionAt(x, y) === here) return true;
+    }
+    return false;
   },
 
   /* ---- construction & repair ---- */
@@ -600,7 +623,15 @@ const Sim = {
     if (b.built && b.hp >= b.maxHp) { Sim.afterBuild(u, b); return; }
     const near = b.def.passable ? U.dist(u.x, u.y, b.x, b.y) <= 1.4 : Sim.distTo(u, b) <= REACH;
     if (!near) {
-      if (!u.path && !Sim.pathToEntity(u, b)) { u.stuck++; if (u.stuck > 2) { Sim.idle(u); Game.notify(u.owner, 'Cannot reach the building site.', 'warn', b.x, b.y); } return; }
+      if (!u.path && !Sim.pathToEntity(u, b)) {
+        u.stuck++;
+        if (u.stuck > 2) {
+          Sim.idle(u); Game.notify(u.owner, 'Cannot reach the building site.', 'warn', b.x, b.y);
+          // a bot gives up on a foundation it has walled in, and gets its materials back
+          const p = Game.players[b.owner]; if (p && p.isAI && !b.built && b.progress < 0.05) { for (const k in b.def.cost) p.res[k] += Math.round(b.def.cost[k] * (1 - b.progress)); Sim.kill(b, null); }
+        }
+        return;
+      }
       const s = Sim.step(u, dt);
       if (s === 'arrived' && !(b.def.passable ? U.dist(u.x, u.y, b.x, b.y) <= 1.4 : Sim.distTo(u, b) <= REACH)) { u.path = null; u.stuck++; if (u.stuck > 3) Sim.idle(u); }
       if (s === 'blocked') u.path = null;
@@ -681,18 +712,70 @@ const Sim = {
     if (b.def.monument) { b.monumentT += dt; if (b.monumentT >= Game.settings.monumentTime) Game.onMonumentWin(p); }
   },
   /* A free tile around a building's footprint, nearest to (rx, ry). */
-  spotNear(b, rx, ry, owner) {
+  spotNear(b, rx, ry, owner, naval) {
     let best = null, bd = Infinity;
+    const ok = (x, y) => (naval ? World.sailable(x, y) : World.passable(x, y, owner));
     for (let x = b.tx - 1; x <= b.tx + b.size; x++) for (let y = b.ty - 1; y <= b.ty + b.size; y++) {
       if (x >= b.tx && x < b.tx + b.size && y >= b.ty && y < b.ty + b.size) continue;
-      if (!World.passable(x, y, owner)) continue;
+      if (!ok(x, y)) continue;
       const d = U.dist2(x + 0.5, y + 0.5, rx, ry); if (d < bd) { bd = d; best = [x, y]; }
     }
-    if (!best) best = U.nearestTile(b.x, b.y, 8, (x, y) => World.passable(x, y, owner));
+    if (!best) best = U.nearestTile(b.x, b.y, 8, ok);
     return best;
   },
+  /* ---- transports ----
+     Land units walk to the shore beside a transport and step aboard; the transport sails to water beside the
+     land it was sent to and puts everyone ashore there. */
+  room(ship) { return ship.def.capacity - ship.cargo.length - Game.units.filter((v) => !v.dead && v.order && v.order.type === 'board' && v.order.ship === ship).length; },
+  doBoard(u, o, dt) {
+    const ship = o.ship;
+    if (!ship || ship.dead || ship.owner !== u.owner || ship.cargo.length >= ship.def.capacity) { Sim.idle(u); return; }
+    if (U.dist(u.x, u.y, ship.x, ship.y) <= 1.75) { Sim.embark(u, ship); return; }
+    o.repath = (o.repath || 0) - dt;
+    if (!u.path || o.repath <= 0) {
+      o.repath = 1;
+      const here = World.regionAt(u.x, u.y), sx = Math.floor(ship.x), sy = Math.floor(ship.y);
+      const t = U.nearestTile(sx, sy, 3, (x, y) => World.passable(x, y, u.owner) && World.regionAt(x, y) === here);
+      if (!t || !Sim.pathTo(u, t[0], t[1])) { u.stuck++; if (u.stuck > 4) Sim.idle(u); return; }
+    }
+    const s = Sim.step(u, dt);
+    if (s === 'arrived' && U.dist(u.x, u.y, ship.x, ship.y) > 1.75) { u.path = null; u.stuck++; if (u.stuck > 6) Sim.idle(u); }
+    if (s === 'blocked') u.path = null;
+  },
+  embark(u, ship) {
+    Sim.setOrder(u, null);
+    const i = Game.units.indexOf(u); if (i >= 0) Game.units.splice(i, 1);
+    const si = Game.selection.indexOf(u); if (si >= 0) { Game.selection.splice(si, 1); UI.selDirty = UI.cmdDirty = true; }
+    u.inside = ship; u.path = null; u.moving = false; ship.cargo.push(u);
+    if (Game.selection.includes(ship)) UI.selDirty = UI.cmdDirty = true;
+  },
+  doUnload(ship, o, dt) {
+    if (!ship.cargo.length) { Sim.setOrder(ship, o.then || null); return; }
+    const region = o.region || World.regionAt(o.x, o.y);
+    // already lying against that shore: put them off here
+    for (const [dx, dy] of U.DIRS) { const x = Math.floor(ship.x) + dx, y = Math.floor(ship.y) + dy; if (World.passable(x, y, ship.owner) && (!region || World.regionAt(x, y) === region)) { Sim.disembark(ship, o); return; } }
+    if (!o.landing) { o.landing = World.landingNear(o.x, o.y, region, 16); if (!o.landing) { Game.notify(ship.owner, 'Nowhere to land there.', 'warn', ship.x, ship.y); Sim.idle(ship); return; } }
+    if (!ship.path && !Sim.pathTo(ship, o.landing[0], o.landing[1])) { ship.stuck++; if (ship.stuck > 3) { Game.notify(ship.owner, 'The transport can\u2019t sail there.', 'warn', ship.x, ship.y); Sim.idle(ship); } return; }
+    const s = Sim.step(ship, dt);
+    if (s === 'arrived') ship.path = null;
+    if (s === 'blocked') ship.path = null;
+  },
+  disembark(ship, o) {
+    const region = o && (o.region || World.regionAt(o.x, o.y)), taken = new Set(), sx = Math.floor(ship.x), sy = Math.floor(ship.y), landed = [];
+    for (const u of ship.cargo.slice()) {
+      const t = U.nearestTile(sx, sy, 5, (x, y) => World.passable(x, y, u.owner) && (!region || World.regionAt(x, y) === region) && !taken.has(x + ',' + y));
+      if (!t) break;
+      taken.add(t[0] + ',' + t[1]);
+      ship.cargo.splice(ship.cargo.indexOf(u), 1); u.inside = null; u.x = t[0] + 0.5; u.y = t[1] + 0.5; Game.units.push(u); landed.push(u);
+      if (o && o.after) Sim.setOrder(u, Object.assign({}, o.after));
+    }
+    ship.path = null; ship.moving = false;
+    if (Game.selection.includes(ship)) UI.selDirty = UI.cmdDirty = true;
+    if (!ship.cargo.length) Sim.setOrder(ship, (o && o.then) || null);
+    return landed;
+  },
   /* ---- garrison ---- */
-  canGarrison(u, b) { return !!(b && !b.dead && b.built && b.def.garrison && b.owner === u.owner && u.def.cls !== 'cavalry' && u.def.cls !== 'siege'); },
+  canGarrison(u, b) { return !!(b && !b.dead && b.built && b.def.garrison && b.owner === u.owner && u.def.cls !== 'cavalry' && u.def.cls !== 'siege' && !u.def.naval); },
   garrison(u, b) {
     if (!Sim.canGarrison(u, b) || b.garrison.length >= b.def.garrison) return false;
     const o = u.order, keep = o && o.type === 'garrison' ? o.prev : null, fled = !!(o && o.type === 'garrison' && o.flee);
@@ -747,14 +830,14 @@ const Sim = {
     const p = Game.players[b.owner];
     // spawn on a free tile around the footprint, biased towards the rally point
     const rx = b.rally ? b.rally.x : b.x, ry = b.rally ? b.rally.y + 1 : b.y + b.size / 2 + 1;
-    const best = Sim.spotNear(b, rx, ry, b.owner); if (!best) return;
+    const best = Sim.spotNear(b, rx, ry, b.owner, !!UNITS[type].naval); if (!best) return;
     const u = Ent.unit(type, b.owner, best[0] + 0.5, best[1] + 0.5);
     Game.units.push(u); p.stats.trained++;
     if (b.rally) {
       const r = b.rally;
-      if (r.res && !r.res.removed && r.res.amount > 0 && type === 'villager') Sim.assignGather(u, r.res, null, 14);
+      if (r.res && !r.res.removed && r.res.amount > 0 && (type === 'villager' || (u.def.gather && u.def.gather.includes(r.res.kind)))) Sim.assignGather(u, r.res, null, 14);
       else if (r.bld && !r.bld.dead && type === 'villager') { if (r.bld.def.farm && r.bld.built) Sim.setOrder(u, { type: 'gather', res: r.bld }); else Sim.setOrder(u, { type: 'build', bld: r.bld }); }
-      else Sim.setOrder(u, { type: type === 'villager' ? 'move' : 'attackmove', x: Math.floor(r.x), y: Math.floor(r.y) });
+      else Sim.setOrder(u, { type: type === 'villager' || u.def.noAttack ? 'move' : 'attackmove', x: Math.floor(r.x), y: Math.floor(r.y) });
     }
     Game.onSpawned(u, b);
   },

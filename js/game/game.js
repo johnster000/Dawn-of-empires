@@ -1,7 +1,7 @@
 /* Game controller: settings, setup, the main loop, selection and commands, victory. */
 const STEP = 1 / 20;
 const Game = {
-  defaults: { faction: 'random', mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
+  defaults: { faction: 'random', mapType: 'land', mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
   settings: null, players: [], human: 0, units: [], buildings: [], effects: [], selection: [], groups: {},
   running: false, paused: false, over: false, time: 0, acc: 0, lastTs: 0, seed: 0,
   placing: null, buildMenu: false, wallStart: null, mode: null, selectedRes: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,
@@ -36,7 +36,7 @@ const Game = {
     this.players.push(new Player(0, { name: 'You', color: humanColor, isAI: false, res: { ...startRes }, age: s.startAge, faction: mine }));
     for (let i = 1; i < n; i++) this.players.push(new Player(i, { name: names[i - 1], color: colors[i - 1], isAI: true, difficulty: s.difficulty, res: { ...startRes }, age: s.startAge, faction: peoples[(i - 1) % peoples.length] }));
     this.human = 0;
-    World.generate({ mapSize: s.mapSize, terrain: s.terrain, seed: this.seed, players: n, reveal: s.reveal });
+    World.generate({ mapType: s.mapType, mapSize: s.mapSize, terrain: s.terrain, seed: this.seed, players: n, reveal: s.reveal });
     Renderer.prepareMap();
     // Town hall and three villagers for everyone
     for (let i = 0; i < n; i++) {
@@ -55,7 +55,7 @@ const Game = {
     this.running = true;
     UI.showScreen(null); UI.syncSpeed(); UI.selDirty = UI.cmdDirty = true;
     this.select([this.players[0].buildings('townhall')[0]]);
-    UI.message(`${AGES[s.startAge].name}. ${n - 1} rival${n > 2 ? 's' : ''} somewhere in the ${TERRAINS[s.terrain].name.toLowerCase()}. Build, grow, endure.`, 'info');
+    UI.message(s.mapType === 'islands' ? `${AGES[s.startAge].name}. ${n - 1} rival${n > 2 ? 's' : ''} across the water. Build a dock, find the rich isles, endure.` : `${AGES[s.startAge].name}. ${n - 1} rival${n > 2 ? 's' : ''} somewhere in the ${TERRAINS[s.terrain].name.toLowerCase()}. Build, grow, endure.`, 'info');
     { const f = FACTIONS[this.players[0].faction], uu = UNITS[f.unique]; UI.message(`You lead the ${f.name}. ${f.bonus} ${uu.name}s train at the ${BUILDINGS[uu.from].name} from the Hearth Age.`, 'info'); }
     Sfx.init();
   },
@@ -134,7 +134,7 @@ const Game = {
   },
   focus(e) { Renderer.centerOn(e.x, e.y); },
   selectArmy() {
-    const army = this.players[this.human].units().filter((u) => u.type !== 'villager');
+    const army = this.players[this.human].units().filter((u) => u.type !== 'villager' && !u.def.naval);
     if (!army.length) { UI.toast('No soldiers'); return; }
     this.select(army); this.focus(army[0]);
   },
@@ -169,7 +169,7 @@ const Game = {
     this.command({ unit: null, bld: b, res: r, x: wx, y: wy }, queue, null);
   },
   command(t, queue, mode) {
-    const units = this.selection.filter((s) => s.kind === 'unit' && s.owner === this.human && !s.dead);
+    let units = this.selection.filter((s) => s.kind === 'unit' && s.owner === this.human && !s.dead);
     const blds = this.selection.filter((s) => s.kind === 'building' && s.owner === this.human && !s.dead);
     if (!units.length && blds.length) {
       // rally point
@@ -179,6 +179,18 @@ const Game = {
     if (!units.length) return;
     if (!World.inBounds(Math.floor(t.x), Math.floor(t.y))) return;
     const tx = Math.floor(t.x), ty = Math.floor(t.y);
+    // ships take their own orders; whatever is left of the selection carries on below
+    const ships = units.filter((u) => u.def.naval);
+    if (ships.length && mode !== 'garrison' && mode !== 'repair') { this.commandShips(ships, t, mode, tx, ty); units = units.filter((u) => !u.def.naval); if (!units.length) return; }
+    // land units onto one of your transports
+    if (t.unit && t.unit.owner === this.human && t.unit.def.capacity && !mode) {
+      const ship = t.unit, takers = units.filter((u) => !u.def.naval && u.def.cls !== 'siege'), room = Sim.room(ship);
+      if (!takers.length) return;
+      if (room <= 0) { UI.toast('The transport is full'); Sfx.play('error'); return; }
+      takers.slice(0, room).forEach((u) => Sim.setOrder(u, { type: 'board', ship }));
+      if (takers.length > room) UI.toast(`Room for ${room} aboard`);
+      Sfx.play('ack'); this.ping(ship.x, ship.y); return;
+    }
     const vill = units.filter((u) => u.type === 'villager'), mil = units.filter((u) => u.type !== 'villager');
     const target = t.unit && t.unit.owner !== this.human ? t.unit : t.bld && t.bld.owner !== this.human ? t.bld : null;
     if (mode === 'repair' && !(t.bld && t.bld.owner === this.human)) { UI.toast('Pick one of your buildings to repair'); return; }
@@ -224,16 +236,36 @@ const Game = {
     }
     this.spread(units, tx, ty, 'move'); this.ping(t.x, t.y); Sfx.play('ack');
   },
+  commandShips(ships, t, mode, tx, ty) {
+    const enemy = t.unit && t.unit.owner !== this.human ? t.unit : t.bld && t.bld.owner !== this.human ? t.bld : null;
+    let rest = ships.slice(); const done = (list) => { rest = rest.filter((s) => !list.includes(s)); };
+    const war = ships.filter((s) => !s.def.noAttack), boats = ships.filter((s) => s.def.gather);
+    if (enemy && war.length) { for (const s of war) Sim.setOrder(s, { type: 'attack', target: enemy }); done(war); this.ping(enemy.x, enemy.y, '#d8484a'); }
+    if (t.res && t.res.kind === 'fish' && boats.length) { let sent = 0; for (const s of boats) if (Sim.assignGather(s, t.res, null, 14)) sent++; done(boats); if (!sent) UI.toast('No room to fish there'); else this.ping(t.res.x + 0.5, t.res.y + 0.5); }
+    if (t.bld && t.bld.owner === this.human && t.bld.def.water && t.bld.built && boats.length) { const full = boats.filter((s) => s.carry.amt > 0); for (const s of full) Sim.setOrder(s, { type: 'gather', res: s.order && s.order.res || null, dropoff: t.bld, phase: 'return' }); done(full); }
+    // a shore: loaded transports put their passengers off there
+    if (World.isLand(tx, ty) && !(t.bld && t.bld.def.water) && mode !== 'attackmove') { const loaded = rest.filter((s) => s.def.capacity && s.cargo.length); for (const s of loaded) Sim.setOrder(s, { type: 'unload', x: tx, y: ty }); done(loaded); if (loaded.length) this.ping(t.x, t.y); }
+    if (rest.length) this.spread(rest, tx, ty, mode === 'attackmove' ? 'attackmove' : 'move');
+    Sfx.play('ack');
+  },
   /* Give each unit its own destination tile around the target. */
   spread(units, tx, ty, type) {
     if (!units.length) return;
+    // ships look for water, everyone else for land; each group spreads on its own
+    const naval = units.filter((u) => u.def.naval);
+    if (naval.length && naval.length < units.length) { this.spread(naval, tx, ty, type); units = units.filter((u) => !u.def.naval); }
+    const sea = !!units[0].def.naval, ok = (x, y) => (sea ? World.sailable(x, y) : World.passable(x, y, this.human));
+    if (sea && type === 'attackmove') { const peace = units.filter((u) => u.def.noAttack); if (peace.length && peace.length < units.length) { this.spread(peace, tx, ty, 'move'); units = units.filter((u) => !u.def.noAttack); } else if (peace.length) type = 'move'; }
+    // land units sent to another island can't walk there
+    const goal = World.regionAt(tx, ty);
+    if (!sea && goal > 0 && !units.some((u) => World.regionAt(u.x, u.y) === goal)) { UI.toast('That is across the water. Take a transport.'); Sfx.play('error'); return; }
     // Every unit gets its own tile. Handing two of them the same one leaves them shoving each other over it
     // for as long as they live, so the ring keeps widening until there are enough to go round.
     const taken = new Set(), tiles = [];
-    const maxR = Math.ceil(Math.sqrt(units.length)) + 8;
+    const maxR = Math.ceil(Math.sqrt(units.length)) + (sea ? 16 : 8);
     for (let d = 0; d <= maxR && tiles.length < units.length; d++) for (let x = tx - d; x <= tx + d; x++) for (let y = ty - d; y <= ty + d; y++) {
       if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== d) continue;
-      const key = x + ',' + y; if (taken.has(key) || !World.passable(x, y, this.human)) continue;
+      const key = x + ',' + y; if (taken.has(key) || !ok(x, y)) continue;
       taken.add(key); tiles.push([x, y]);
     }
     if (!tiles.length) { UI.toast("Can't go there"); Sfx.play('error'); return; }
@@ -309,7 +341,7 @@ const Game = {
     p.pay(def.cost);
     const b = Ent.building(type, p.id, tx, ty, false); World.setBuilding(b, true); this.buildings.push(b);
     // units standing on the site step off it
-    if (!def.passable) for (const u of this.units) if (!u.dead && u.x >= tx && u.x < tx + def.size && u.y >= ty && u.y < ty + def.size) { const t = U.nearestTile(u.x, u.y, 4, (x, y) => World.passable(x, y)); if (t) { u.x = t[0] + 0.5; u.y = t[1] + 0.5; } }
+    if (!def.passable) for (const u of this.units) if (!u.dead && u.x >= tx && u.x < tx + def.size && u.y >= ty && u.y < ty + def.size) { const t = U.nearestTile(u.x, u.y, 4, (x, y) => Sim.pass(u, x, y)); if (t) { u.x = t[0] + 0.5; u.y = t[1] + 0.5; } }
     return b;
   },
   cancelPlacing() { this.placing = null; this.wallStart = null; Renderer.ghost = null; UI.hint(null); UI.cmdDirty = true; },

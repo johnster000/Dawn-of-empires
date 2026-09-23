@@ -17,10 +17,10 @@ const Save = {
     if (o.phase) d.phase = o.phase; if (o.x != null) { d.x = o.x; d.y = o.y; }
     if (o.spot) d.spot = o.spot; if (o.since != null) d.since = o.since;
     if (o.res !== undefined) d.res = this.refRes(o.res); if (o.bld) d.bld = o.bld.id; if (o.target) d.target = this.ref(o.target); if (o.dropoff) d.dropoff = o.dropoff.id;
-    if (o.flee) d.flee = 1; if (o.resume) d.resume = this.order(o.resume); if (o.after) d.after = this.ref(o.after); if (o.prev) d.prev = this.order(o.prev); if (o.then) d.then = this.order(o.then);
+    if (o.flee) d.flee = 1; if (o.ship) d.ship = o.ship.id; if (o.region != null) d.region = o.region; if (o.resume) d.resume = this.order(o.resume); if (o.after) d.after = this.ref(o.after); if (o.prev) d.prev = this.order(o.prev); if (o.then) d.then = this.order(o.then);
     return d;
   },
-  unit(u) { return { id: u.id, type: u.type, owner: u.owner, x: +u.x.toFixed(3), y: +u.y.toFixed(3), hp: Math.round(u.hp * 10) / 10, face: +u.face.toFixed(2), cd: +u.cd.toFixed(2), anim: +u.anim.toFixed(2), carry: u.carry.amt > 0 ? { kind: u.carry.kind, amt: +u.carry.amt.toFixed(2) } : null, fled: u.fled || undefined, order: this.order(u.order), prev: this.order(u.prevOrder) }; },
+  unit(u) { return { id: u.id, type: u.type, owner: u.owner, x: +u.x.toFixed(3), y: +u.y.toFixed(3), hp: Math.round(u.hp * 10) / 10, face: +u.face.toFixed(2), cd: +u.cd.toFixed(2), anim: +u.anim.toFixed(2), carry: u.carry.amt > 0 ? { kind: u.carry.kind, amt: +u.carry.amt.toFixed(2) } : null, fled: u.fled || undefined, order: this.order(u.order), prev: this.order(u.prevOrder), cargo: u.cargo && u.cargo.length ? u.cargo.map((c) => this.unit(c)) : undefined }; },
   building(b) { return { id: b.id, type: b.type, owner: b.owner, tx: b.tx, ty: b.ty, hp: Math.round(b.hp), built: b.built, progress: +b.progress.toFixed(4), queue: b.queue, qt: +b.qt.toFixed(2), rally: b.rally ? { x: b.rally.x, y: b.rally.y, res: this.refRes(b.rally.res), bld: b.rally.bld ? b.rally.bld.id : null } : null, cd: +b.cd.toFixed(2), worker: b.worker && !b.worker.dead ? b.worker.id : null, monumentT: Math.round(b.monumentT), ageVisual: b.ageVisual, bell: !!b.bell, garrison: b.garrison.map((u) => this.unit(u)) }; },
   rle(arr) { const out = []; let v = 0, n = 0; for (let i = 0; i < arr.length; i++) { if (arr[i] === v) n++; else { out.push(n); v = arr[i]; n = 1; } } out.push(n); return out; },
   unrle(runs, len) { const a = new Uint8Array(len); let i = 0, v = 0; for (const n of runs) { if (v) a.fill(1, i, i + n); i += n; v ^= 1; } return a; },
@@ -55,14 +55,15 @@ const Save = {
       for (const ud of bd.garrison || []) { const u = this.makeUnit(ud); u.inside = b; b.garrison.push(u); uById.set(u.id, u); pending.push([u, ud]); }
       pending.push([b, bd]);
     }
-    for (const ud of d.units) { const u = this.makeUnit(ud); Game.units.push(u); uById.set(u.id, u); pending.push([u, ud]); }
+    for (const ud of d.units) { const u = this.makeUnit(ud); Game.units.push(u); uById.set(u.id, u); pending.push([u, ud]);
+      for (const cd of ud.cargo || []) { const c = this.makeUnit(cd); c.inside = u; u.cargo.push(c); uById.set(c.id, c); pending.push([c, cd]); } }
     const res = (ref) => (!ref ? null : ref.r != null ? resById.get(ref.r) || null : bById.get(ref.b) || null);
     const ent = (ref) => (!ref ? null : ref.u != null ? uById.get(ref.u) || null : bById.get(ref.b) || null);
-    const order = (od) => { if (!od) return null; const o = { type: od.type }; if (od.phase) o.phase = od.phase; if (od.x != null) { o.x = od.x; o.y = od.y; } if (od.spot) o.spot = od.spot; if (od.since != null) o.since = od.since; if (od.flee) o.flee = true; if (od.res !== undefined) o.res = res(od.res); if (od.bld) o.bld = bById.get(od.bld) || null; if (od.target) o.target = ent(od.target); if (od.dropoff) o.dropoff = bById.get(od.dropoff) || null; if (od.resume) o.resume = order(od.resume); if (od.after) o.after = ent(od.after); if (od.prev) o.prev = order(od.prev); if (od.then) o.then = order(od.then); return o; };
+    const order = (od) => { if (!od) return null; const o = { type: od.type }; if (od.phase) o.phase = od.phase; if (od.x != null) { o.x = od.x; o.y = od.y; } if (od.spot) o.spot = od.spot; if (od.since != null) o.since = od.since; if (od.flee) o.flee = true; if (od.ship) o.ship = uById.get(od.ship) || null; if (od.region != null) o.region = od.region; if (od.res !== undefined) o.res = res(od.res); if (od.bld) o.bld = bById.get(od.bld) || null; if (od.target) o.target = ent(od.target); if (od.dropoff) o.dropoff = bById.get(od.dropoff) || null; if (od.resume) o.resume = order(od.resume); if (od.after) o.after = ent(od.after); if (od.prev) o.prev = order(od.prev); if (od.then) o.then = order(od.then); return o; };
     for (const [e, ed] of pending) {
       if (e.kind === 'unit') {
         e.order = order(ed.order); e.prevOrder = order(ed.prev);
-        if (e.order && (e.order.type === 'attack' || e.order.type === 'build' || e.order.type === 'garrison') && !(e.order.target || e.order.bld)) e.order = null;
+        if (e.order && (e.order.type === 'attack' || e.order.type === 'build' || e.order.type === 'garrison' || e.order.type === 'board') && !(e.order.target || e.order.bld || e.order.ship)) e.order = null;
         if (e.order && e.order.type === 'gather' && e.order.res) { if (rk(e.order.res) === 'farm') e.order.res.worker = e; else e.order.res.workers = (e.order.res.workers || 0) + 1; }
         else if (e.order && e.order.type === 'gather' && !e.carry.amt) e.order = null;
       } else {
