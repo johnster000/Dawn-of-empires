@@ -15,11 +15,20 @@ class Player {
     this.id = id; this.name = opts.name; this.color = opts.color; this.isAI = !!opts.isAI; this.difficulty = opts.difficulty || 'normal';
     this.res = Object.assign({ food: 200, wood: 200, stone: 100, gold: 100 }, opts.res || {});
     this.age = opts.age || 0; this.techs = new Set(); this.alive = true;
-    this.mods = { atk: {}, armor: {}, range: {}, gather: { food: 0, wood: 0, stone: 0, gold: 0 }, farmYield: 0, villagerSpeed: 0, carry: 0, villagerHp: 0, villagerArmor: 0, towerAtk: 0, towerRange: 0, trainSpeed: 0 };
+    this.mods = Player.baseMods();
+    this.faction = FACTIONS[opts.faction] ? opts.faction : 'romans';
+    this.addEffect(FACTIONS[this.faction].effect);
     this.stats = { gathered: { food: 0, wood: 0, stone: 0, gold: 0 }, kills: 0, losses: 0, razed: 0, trained: 0 };
     this.ai = null;
     this.grudge = {}; // player id -> when they last drew blood from us
   }
+  static baseMods() { return { atk: {}, armor: {}, range: {}, gather: { food: 0, wood: 0, stone: 0, gold: 0 }, farmYield: 0, villagerSpeed: 0, carry: 0, villagerHp: 0, villagerArmor: 0, towerAtk: 0, towerRange: 0, trainSpeed: 0, trainCls: {}, buildSpeed: 0, researchSpeed: 0 }; }
+  addEffect(e) { const m = this.mods; for (const k in e) { if (typeof e[k] === 'number') m[k] = (m[k] || 0) + e[k]; else { m[k] = m[k] || {}; for (const c in e[k]) m[k][c] = (m[k][c] || 0) + e[k][c]; } } }
+  /* Switch people (used when a save is restored): start the modifiers again from this people's bonus. */
+  setFaction(id) { if (!FACTIONS[id]) return; this.faction = id; this.mods = Player.baseMods(); this.addEffect(FACTIONS[id].effect); const t = [...this.techs]; this.techs.clear(); for (const x of t) this.applyTech(x); }
+  /* Unique warriors belong to one people. */
+  mayTrain(id) { const d = UNITS[id]; return !!d && (!d.faction || d.faction === this.faction); }
+  trainTime(id) { const d = UNITS[id]; return d.cls === 'villager' ? d.time : d.time / (1 + this.mods.trainSpeed + (this.mods.trainCls[d.cls] || 0)); }
   canAfford(cost) { for (const k in cost) if ((this.res[k] || 0) < cost[k]) return false; return true; }
   missing(cost) { const m = []; for (const k in cost) if ((this.res[k] || 0) < cost[k]) m.push(k); return m; }
   pay(cost) { for (const k in cost) this.res[k] -= cost[k]; }
@@ -30,11 +39,7 @@ class Player {
   applyTech(id) {
     const t = TECHS[id]; if (!t || this.techs.has(id)) return;
     this.techs.add(id);
-    const e = t.effect, m = this.mods;
-    for (const k in e) {
-      if (typeof e[k] === 'number') m[k] = (m[k] || 0) + e[k];
-      else for (const c in e[k]) m[k][c] = (m[k][c] || 0) + e[k][c];
-    }
+    this.addEffect(t.effect);
     for (const u of Game.units) if (!u.dead && u.owner === this.id) Sim.refreshUnit(u);
   }
   buildings(type) { return Game.buildings.filter((b) => !b.dead && b.owner === this.id && (!type || b.type === type)); }
@@ -608,7 +613,7 @@ const Sim = {
     const n = Math.max(1, b.buildersLast);
     const share = (1 + 0.6 * (n - 1)) / n; // diminishing returns for crews
     if (!b.built) {
-      b.progress = Math.min(1, b.progress + (dt / b.def.time) * share);
+      b.progress = Math.min(1, b.progress + (dt / b.def.time) * share * (1 + Game.players[b.owner].mods.buildSpeed));
       b.hp = Math.max(1, Math.round(b.maxHp * b.progress));
       if (b.progress >= 1) Sim.completeBuilding(b);
     } else {
@@ -644,8 +649,7 @@ const Sim = {
     const p = Game.players[b.owner];
     if (b.queue.length) {
       const q = b.queue[0];
-      let total = q.kind === 'unit' ? UNITS[q.id].time : q.kind === 'tech' ? TECHS[q.id].time : AGES[p.age + 1].advance.time;
-      if (q.kind === 'unit' && UNITS[q.id].cls !== 'villager') total /= 1 + p.mods.trainSpeed;
+      const total = q.kind === 'unit' ? p.trainTime(q.id) : q.kind === 'tech' ? TECHS[q.id].time / (1 + p.mods.researchSpeed) : AGES[p.age + 1].advance.time;
       b.qt += dt;
       if (b.qt >= total) {
         b.qt = 0; b.queue.shift();
@@ -762,6 +766,7 @@ const Sim = {
     if (b.queue.length >= 8) return 'Queue is full';
     if (item.kind === 'unit') {
       const d = UNITS[item.id];
+      if (!p.mayTrain(item.id)) return 'Only the ' + FACTIONS[d.faction].name + ' train these';
       if (d.age > p.age) return 'Requires the ' + AGES[d.age].name;
       if (p.pop() + 1 > p.popCap()) return 'Need more houses';
       if (!p.canAfford(d.cost)) return 'Not enough ' + p.missing(d.cost).join(', ');

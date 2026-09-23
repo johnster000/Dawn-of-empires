@@ -95,15 +95,16 @@ const UI = {
     opt($('set-pop'), [[50, '50'], [100, '100'], [150, '150'], [200, '200']]);
     opt($('set-speed'), [[1, 'Normal'], [1.5, 'Fast'], [2, 'Very fast']]);
     opt($('set-color'), PLAYER_COLORS.map((c) => [c.id, c.name]));
+    opt($('set-faction'), [['random', 'Random'], ...Object.keys(FACTIONS).map((k) => [k, FACTIONS[k].name])]);
     let saved = null; try { saved = JSON.parse(localStorage.getItem('anvil-settings') || 'null'); } catch (e) {}
     const s = Object.assign({}, Game.defaults, saved || {});
-    $('set-size').value = s.mapSize; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
-    const blurb = () => { $('terrain-blurb').textContent = TERRAINS[$('set-terrain').value].blurb; };
-    $('set-terrain').onchange = blurb; blurb();
+    $('set-size').value = s.mapSize; $('set-terrain').value = s.terrain; $('set-enemies').value = s.enemies; $('set-difficulty').value = s.difficulty; $('set-resources').value = s.resources; $('set-age').value = s.startAge; $('set-pop').value = s.popCap; $('set-speed').value = s.speed; $('set-color').value = s.color; $('set-faction').value = FACTIONS[s.faction] ? s.faction : 'random'; $('set-reveal').checked = !!s.reveal; $('set-seed').value = '';
+    const blurb = () => { $('terrain-blurb').textContent = TERRAINS[$('set-terrain').value].blurb; const f = FACTIONS[$('set-faction').value]; $('faction-blurb').textContent = f ? `${f.blurb} ${f.bonus} Unique warrior: ${UNITS[f.unique].name} (${BUILDINGS[UNITS[f.unique].from].name}).` : 'A people chosen at random when the game begins.'; };
+    $('set-terrain').onchange = blurb; $('set-faction').onchange = blurb; blurb();
   },
   readSetup() {
     const $ = this.$;
-    const s = { mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
+    const s = { mapSize: $('set-size').value, terrain: $('set-terrain').value, enemies: +$('set-enemies').value, difficulty: $('set-difficulty').value, resources: $('set-resources').value, startAge: +$('set-age').value, popCap: +$('set-pop').value, speed: +$('set-speed').value, color: $('set-color').value, faction: $('set-faction').value, reveal: $('set-reveal').checked, seedText: $('set-seed').value.trim() };
     try { localStorage.setItem('anvil-settings', JSON.stringify(s)); } catch (e) {}
     return Object.assign({}, Game.defaults, s);
   },
@@ -186,7 +187,7 @@ const UI = {
       head.appendChild(this.icon(s.kind, s.type, s.owner));
       const info = U.el('div', 'sel-info');
       info.appendChild(U.el('div', 'sel-name', s.def.name));
-      const own = U.el('div', 'sel-owner', p.name); own.style.color = p.color.light; info.appendChild(own);
+      const own = U.el('div', 'sel-owner', p.name + ' · ' + FACTIONS[p.faction].name); own.style.color = p.color.light; info.appendChild(own);
       const bar = U.el('div', 'hpbar'); const fill = U.el('div', 'fill'); const f = s.hp / s.maxHp; fill.style.width = (f * 100) + '%'; fill.style.background = f > 0.5 ? '#6fbf6a' : f > 0.25 ? '#e0b040' : '#d8484a'; bar.appendChild(fill); bar.appendChild(U.el('span', null, `${Math.ceil(s.hp)} / ${s.maxHp}`)); info.appendChild(bar);
       head.appendChild(info); el.appendChild(head);
       head.onclick = () => el.classList.toggle('expanded'); head.title = 'Tap for details';
@@ -212,7 +213,7 @@ const UI = {
           const q = U.el('div', 'queue');
           s.queue.forEach((item, i) => {
             const qi = U.el('div', 'qitem'); qi.title = 'Click to cancel';
-            const total = item.kind === 'unit' ? UNITS[item.id].time / (UNITS[item.id].cls !== 'villager' ? 1 + p.mods.trainSpeed : 1) : item.kind === 'tech' ? TECHS[item.id].time : AGES[p.age + 1].advance.time;
+            const total = item.kind === 'unit' ? p.trainTime(item.id) : item.kind === 'tech' ? TECHS[item.id].time / (1 + p.mods.researchSpeed) : AGES[p.age + 1].advance.time;
             const name = item.kind === 'unit' ? UNITS[item.id].name : item.kind === 'tech' ? TECHS[item.id].name : 'Advance to ' + AGES[p.age + 1].name;
             qi.appendChild(U.el('span', 'qname', name));
             const bar = U.el('div', 'qbar'); const fl = U.el('div', 'fill'); fl.style.width = (i === 0 ? (s.qt / total) * 100 : 0) + '%'; bar.appendChild(fl); qi.appendChild(bar);
@@ -319,7 +320,7 @@ const UI = {
     } else if (blds.length) {
       const b = blds[0]; const same = blds.every((x) => x.type === b.type);
       if (same && b.built) {
-        for (const id of b.def.trains || []) { const d = UNITS[id]; let why = null; if (d.age > p.age) why = 'Requires the ' + AGES[d.age].name; else if (p.pop() + 1 > p.popCap()) why = p.popCap() >= Game.settings.popCap ? 'Population cap reached' : 'Need more houses'; else if (!p.canAfford(d.cost)) why = 'Not enough ' + p.missing(d.cost).join(', ');
+        for (const id of b.def.trains || []) { if (!p.mayTrain(id)) continue; const d = UNITS[id]; let why = null; if (d.age > p.age) why = 'Requires the ' + AGES[d.age].name; else if (p.pop() + 1 > p.popCap()) why = p.popCap() >= Game.settings.popCap ? 'Population cap reached' : 'Need more houses'; else if (!p.canAfford(d.cost)) why = 'Not enough ' + p.missing(d.cost).join(', ');
           cmds.push({ label: d.name, icon: ['unit', id, Game.human], cost: d.cost, desc: d.desc + ` Trains in ${d.time}s.`, locked: d.age > p.age, disabled: why, onClick: () => Game.train(blds, { kind: 'unit', id }) }); }
         for (const id of b.def.techs || []) { const t = TECHS[id]; if (p.techs.has(id)) continue; if (t.requires && !p.techs.has(t.requires)) continue; // one step of a chain at a time
           let why = null; if (t.age > p.age) why = 'Requires the ' + AGES[t.age].name; else if (!p.canAfford(t.cost)) why = 'Not enough ' + p.missing(t.cost).join(', ');

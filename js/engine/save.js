@@ -28,7 +28,7 @@ const Save = {
     return {
       v: this.VERSION, savedAt: Date.now(), settings: Object.assign({}, Game.settings, { forceSeed: Game.seed }), time: Game.time, nextId: Ent.nextId,
       cam: { x: Renderer.cam.x, y: Renderer.cam.y, zoom: Renderer.cam.zoom }, alertT: Game.alertT,
-      players: Game.players.map((p) => ({ res: Object.fromEntries(Object.entries(p.res).map(([k, v]) => [k, Math.round(v * 10) / 10])), age: p.age, techs: [...p.techs], stats: p.stats, alive: p.alive, grudge: p.grudge,
+      players: Game.players.map((p) => ({ res: Object.fromEntries(Object.entries(p.res).map(([k, v]) => [k, Math.round(v * 10) / 10])), age: p.age, techs: [...p.techs], stats: p.stats, alive: p.alive, grudge: p.grudge, faction: p.faction,
         ai: p.ai ? { lastAttack: p.ai.lastAttack === -Infinity ? null : p.ai.lastAttack, attacking: p.ai.attacking, attackTarget: p.ai.attackTarget ? p.ai.attackTarget.id : null, attackStart: p.ai.attackStart, lastHouse: p.ai.lastHouse, threatT: p.ai.threatT, warned: !!p.ai.warned } : null })),
       world: { nextResId: World.nextResId, res: World.res.map((r) => [r.id, r.kind, r.x, r.y, Math.round(r.amount * 10) / 10, +r.v.toFixed(4), +r.ox.toFixed(3), +r.oy.toFixed(3)]), decals: World.decals, explored: this.rle(World.explored) },
       units: Game.units.filter((u) => !u.dead).map((u) => this.unit(u)),
@@ -45,7 +45,7 @@ const Save = {
     World.res = []; World.nextResId = d.world.nextResId; World.decals = d.world.decals || [];
     for (const [id, kind, x, y, amount, v, ox, oy] of d.world.res) { const amounts = { tree: 100, stone: 350, gold: 350, berry: 125, fish: 250 }; const r = { id, kind, x, y, amount, max: amounts[kind] || amount, v, ox, oy, workers: 0 }; World.res.push(r); World.resAt[World.idx(x, y)] = r; }
     const resById = new Map(World.res.map((r) => [r.id, r]));
-    d.players.forEach((pd, i) => { const p = Game.players[i]; if (!p) return; Object.assign(p.res, pd.res); p.age = pd.age; p.stats = pd.stats; p.alive = pd.alive; p.grudge = Object.assign({}, pd.grudge); for (const t of pd.techs) p.applyTech(t);
+    d.players.forEach((pd, i) => { const p = Game.players[i]; if (!p) return; Object.assign(p.res, pd.res); p.age = pd.age; p.stats = pd.stats; p.alive = pd.alive; p.grudge = Object.assign({}, pd.grudge); if (pd.faction && pd.faction !== p.faction) p.setFaction(pd.faction); for (const t of pd.techs) p.applyTech(t);
       if (p.ai && pd.ai) { Object.assign(p.ai, { lastAttack: pd.ai.lastAttack == null ? -Infinity : pd.ai.lastAttack, attacking: pd.ai.attacking, attackStart: pd.ai.attackStart, lastHouse: pd.ai.lastHouse, threatT: pd.ai.threatT, warned: !!pd.ai.warned }); p.ai._target = pd.ai.attackTarget; } });
     const bById = new Map(), uById = new Map(), pending = [];
     for (const bd of d.buildings) {

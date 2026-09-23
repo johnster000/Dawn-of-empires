@@ -1,7 +1,7 @@
 /* Game controller: settings, setup, the main loop, selection and commands, victory. */
 const STEP = 1 / 20;
 const Game = {
-  defaults: { mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
+  defaults: { faction: 'random', mapSize: 'medium', terrain: 'meadow', enemies: 1, difficulty: 'normal', resources: 'normal', startAge: 0, popCap: 100, reveal: false, speed: 1, color: 'blue', seedText: '', monumentTime: 300 },
   settings: null, players: [], human: 0, units: [], buildings: [], effects: [], selection: [], groups: {},
   running: false, paused: false, over: false, time: 0, acc: 0, lastTs: 0, seed: 0,
   placing: null, buildMenu: false, wallStart: null, mode: null, selectedRes: null, hover: null, lastEvent: null, debug: false, fogT: 0, winT: 0, alertT: -99, idleIdx: 0,
@@ -30,8 +30,11 @@ const Game = {
     const names = ['Ashvale', 'Corrin', 'Dunmere', 'Eldwick', 'Fenmoor', 'Garrow'];
     const rng = RNG.make(this.seed ^ 0x9e3779b9);
     rng.shuffle(colors); rng.shuffle(names);
-    this.players.push(new Player(0, { name: 'You', color: humanColor, isAI: false, res: { ...startRes }, age: s.startAge }));
-    for (let i = 1; i < n; i++) this.players.push(new Player(i, { name: names[i - 1], color: colors[i - 1], isAI: true, difficulty: s.difficulty, res: { ...startRes }, age: s.startAge }));
+    // peoples: yours as chosen (or drawn), the bots' drawn from the rest so no two share one
+    const peoples = Object.keys(FACTIONS); rng.shuffle(peoples);
+    const mine = FACTIONS[s.faction] ? s.faction : peoples[0]; peoples.splice(peoples.indexOf(mine), 1);
+    this.players.push(new Player(0, { name: 'You', color: humanColor, isAI: false, res: { ...startRes }, age: s.startAge, faction: mine }));
+    for (let i = 1; i < n; i++) this.players.push(new Player(i, { name: names[i - 1], color: colors[i - 1], isAI: true, difficulty: s.difficulty, res: { ...startRes }, age: s.startAge, faction: peoples[(i - 1) % peoples.length] }));
     this.human = 0;
     World.generate({ mapSize: s.mapSize, terrain: s.terrain, seed: this.seed, players: n, reveal: s.reveal });
     Renderer.prepareMap();
@@ -53,6 +56,7 @@ const Game = {
     UI.showScreen(null); UI.syncSpeed(); UI.selDirty = UI.cmdDirty = true;
     this.select([this.players[0].buildings('townhall')[0]]);
     UI.message(`${AGES[s.startAge].name}. ${n - 1} rival${n > 2 ? 's' : ''} somewhere in the ${TERRAINS[s.terrain].name.toLowerCase()}. Build, grow, endure.`, 'info');
+    { const f = FACTIONS[this.players[0].faction], uu = UNITS[f.unique]; UI.message(`You lead the ${f.name}. ${f.bonus} ${uu.name}s train at the ${BUILDINGS[uu.from].name} from the Hearth Age.`, 'info'); }
     Sfx.init();
   },
   quit() { if (this.running && !this.over) this.save(true); this.running = false; this.paused = false; this.selection = []; UI.showScreen('title'); UI.syncContinue(); },

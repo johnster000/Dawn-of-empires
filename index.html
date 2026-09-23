@@ -79,7 +79,9 @@
         <label>Starting age <select id="set-age"></select></label>
         <label>Population cap <select id="set-pop"></select></label>
         <label>Game speed <select id="set-speed"></select></label>
+        <label>Your people <select id="set-faction"></select></label>
         <label>Your colour <select id="set-color"></select></label>
+        <p id="faction-blurb" class="blurb"></p>
         <label class="check"><input type="checkbox" id="set-reveal"> Reveal the whole map</label>
         <label>Map seed <span class="seedrow"><input type="text" id="set-seed" placeholder="random" maxlength="24" autocomplete="off"><button id="btn-random-seed" type="button" title="Random seed">⟲</button></span></label>
       </div>
@@ -104,6 +106,8 @@
           <p>Select the Town Hall and choose <b>Advance</b>. Each age needs two different buildings from the age before it and a stock of food and gold. Buildings change their look as you climb.</p>
           <h3>Defence</h3>
           <p>Villagers build <b>walls</b> from the Defences menu: pick a wall, then click and drag a run of it. A <b>gate</b> lets your own people through and can be dropped onto an existing wall piece. Villagers and foot soldiers can <b>garrison</b> inside the Town Hall, towers and keeps by right-clicking them; a garrisoned building shoots more arrows. The Town Hall's <b>Town Bell</b> pulls every villager to shelter and sends them back to work when rung again.</p>
+          <h3>Peoples</h3>
+          <p>Choose a people before you start, or leave it to chance. Each has one warrior nobody else can train, from the Hearth Age, and one modest bonus: <b>Romans</b> build faster and train Praetorians; <b>Huns</b> train cavalry faster and field Steppe Archers; <b>Norse</b> cut wood faster and raise Hirdmen; <b>Egyptians</b> quarry and mine faster and send out Medjay; <b>Gauls</b> farm better and charge with Gaesatae; <b>Greeks</b> research faster and hold the line with Phalangites. Bots are given peoples at random.</p>
           <h3>Saving</h3>
           <p>The game saves itself every minute and when you quit; <b>Continue</b> on the title screen picks it up. <b>Export save</b> in the pause menu gives you text to paste into <b>Import a save</b> on another device.</p>
         </section>
@@ -179,6 +183,7 @@
 <script src="js/data/buildings.js"></script>
 <script src="js/data/units.js"></script>
 <script src="js/data/techs.js"></script>
+<script src="js/data/factions.js"></script>
 <script src="js/engine/audio.js"></script>
 <script src="js/engine/save.js"></script>
 <script src="js/engine/renderer.js"></script>

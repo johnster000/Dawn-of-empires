@@ -222,7 +222,7 @@ const AI = {
     const pop = p.pop(), cap = p.popCap(); if (pop >= cap) return;
     const mil = p.buildings().filter((b) => b.built && b.def.trains && b.type !== 'townhall' && b.queue.length < 2);
     for (const b of mil) {
-      const opts = b.def.trains.filter((id) => UNITS[id].age <= p.age);
+      const opts = b.def.trains.filter((id) => UNITS[id].age <= p.age && p.mayTrain(id));
       if (!opts.length) continue;
       // best available from this building, with some variety
       let id = opts[opts.length - 1]; if (S.rng() < 0.3) id = opts[0];

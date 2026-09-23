@@ -903,7 +903,8 @@ const Renderer = {
     if (cls === 'siege') { this.catapult(u, col); g.restore(); return; }
     let by = 0;
     if (cls === 'cavalry') { this.horse(0, 0, ['#4f3220', '#7a5a3c', '#b8a68c', '#332a28'][u.id % 4], col, walk); by = -15; }
-    const tunic = cls === 'villager' ? '#9c8461' : col.main, tunicDark = cls === 'villager' ? '#6f5a40' : col.dark;
+    const T = u.type, bare = T === 'gaesatae';
+    const tunic = cls === 'villager' ? '#9c8461' : bare ? skin : T === 'medjay' ? '#e8e0cc' : col.main, tunicDark = cls === 'villager' ? '#6f5a40' : bare ? col.dark : T === 'medjay' ? col.main : col.dark;
     const armour = age >= 3 ? '#b4bac4' : age >= 2 ? '#8d939c' : age >= 1 ? '#6f5b44' : '#5a4738';
     // back arm
     g.strokeStyle = skin; g.lineWidth = 2.4; g.beginPath(); g.moveTo(-3.5, by - 21); g.lineTo(-5 - walk * 2, by - 14); g.lineTo(-4 - walk * 3, by - 9); g.stroke();
@@ -920,7 +921,9 @@ const Renderer = {
     g.fillStyle = 'rgba(255,255,255,0.16)'; this.poly([[-5, by - 24], [-1.5, by - 24], [-1, by - 13], [-3.8, by - 13]], 'rgba(255,255,255,0.14)');
     g.fillStyle = '#3a2a1a'; g.fillRect(-4, by - 14.5, 8, 1.6);
     if (cls === 'villager') { g.fillStyle = col.main; this.poly([[-5, by - 24], [-2, by - 24], [3.8, by - 13], [1.5, by - 13]], col.main); }
-    if (cls === 'infantry' || cls === 'cavalry') { this.poly([[-5.5, by - 24.5], [5.5, by - 24.5], [4.5, by - 19], [-4.5, by - 19]], armour); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-5, by - 24, 3, 2); }
+    if ((cls === 'infantry' || cls === 'cavalry') && !bare && T !== 'steppearcher') { this.poly([[-5.5, by - 24.5], [5.5, by - 24.5], [4.5, by - 19], [-4.5, by - 19]], T === 'praetorian' || T === 'phalangite' ? '#b08a4a' : armour); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-5, by - 24, 3, 2); }
+    if (bare) { g.strokeStyle = col.main; g.lineWidth = 1.6; g.beginPath(); g.moveTo(-4.5, by - 24); g.lineTo(3.8, by - 14); g.stroke(); } // a sash in team colour
+    if (T === 'steppearcher') { this.poly([[-5.5, by - 24.5], [5.5, by - 24.5], [4, by - 13], [-4, by - 13]], '#7a5a3a'); g.strokeStyle = col.main; g.lineWidth = 1.4; g.beginPath(); g.moveTo(-4, by - 24); g.lineTo(4, by - 14); g.stroke(); }
     if (cls === 'archer') { g.strokeStyle = '#5a3f22'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-4, by - 24); g.lineTo(4, by - 14); g.stroke(); }
     // neck and head with hair, eye and a hint of a nose
     if (bend) g.translate(2.5, 1.5);
@@ -930,6 +933,11 @@ const Renderer = {
     g.fillStyle = '#1a1010'; g.fillRect(2.2, by - 30, 1.1, 1.1); g.fillStyle = U.shade(skin, -0.18); g.fillRect(3.4, by - 29, 1, 1.4);
     // headgear
     if (cls === 'villager') { g.fillStyle = '#a8894a'; g.beginPath(); g.ellipse(0.4, by - 31.5, 6.2, 1.9, 0, 0, 7); g.fill(); this.ell(0.4, by - 32.6, 3.6, 2.2, '#b89a58'); }
+    else if (T === 'medjay') { g.fillStyle = col.main; g.fillRect(-3.6, by - 32, 8, 1.6); g.fillStyle = '#e8e0cc'; g.fillRect(-4.2, by - 31, 2, 5); }
+    else if (T === 'gaesatae') { g.fillStyle = '#c9a060'; for (let k = -3; k <= 3; k += 2) this.poly([[k - 1.2, by - 32], [k + 0.4, by - 37.5], [k + 1.4, by - 32]], '#c9a060'); }
+    else if (T === 'steppearcher') { this.ell(0.4, by - 32.5, 4.6, 2.2, '#6a4a2a'); this.poly([[-3.4, by - 32.5], [0.4, by - 39], [4.2, by - 32.5]], col.main); g.fillStyle = '#8a6a44'; g.fillRect(-4.6, by - 33, 9.8, 1.6); }
+    else if (T === 'hirdman') { this.poly([[-4.2, by - 30.5], [0.4, by - 37.5], [5, by - 30.5]], '#8d939c'); g.fillStyle = '#8d939c'; g.fillRect(-0.2, by - 30.5, 1.2, 3.6); }
+    else if (T === 'praetorian' || T === 'phalangite') { g.fillStyle = '#b08a4a'; g.beginPath(); g.arc(0.4, by - 30.5, 4.2, Math.PI, 0); g.fill(); g.fillRect(-3.8, by - 30.5, 2.2, 4); g.fillStyle = T === 'praetorian' ? '#b8322a' : col.light; if (T === 'praetorian') g.fillRect(-3.5, by - 37, 8, 2.4); else this.poly([[-4.5, by - 34], [0.4, by - 39], [5, by - 34], [0.4, by - 35.5]], col.light); }
     else if (cls === 'archer') { this.poly([[-4, by - 30], [0.5, by - 37], [5, by - 30]], age >= 2 ? '#7f858c' : '#4d6a32'); g.fillStyle = '#c9a23a'; g.fillRect(3.5, by - 33, 1, 3); }
     else { g.fillStyle = armour; g.beginPath(); g.arc(0.4, by - 30.5, 4.2, Math.PI, 0); g.fill(); g.fillRect(-3.8, by - 30.5, 8.4, 2); if (age >= 2) g.fillRect(-0.5, by - 30, 1.2, 4); if (age >= 3) { g.fillStyle = col.light; g.fillRect(-0.4, by - 38, 1.4, 7); } if (age >= 1) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(-3, by - 33, 2.5, 1.2); } }
     if (bend) g.translate(-2.5, -1.5);
@@ -957,6 +965,25 @@ const Renderer = {
     } else if (u.type === 'spearman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 1, by - 2); g.lineTo(hx + 3 + swing * 5, by - 36 - swing * 2); g.stroke(); this.poly([[hx + 1.5 + swing * 5, by - 35 - swing * 2], [hx + 3 + swing * 5, by - 42 - swing * 2], [hx + 4.5 + swing * 5, by - 35 - swing * 2]], '#c0c6ce'); this.shield(-7.5, by - 15, 4.5, 5.5, col, age); }
     else if (u.type === 'swordsman' || u.type === 'knight') { g.strokeStyle = '#d0d4dc'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + 7 + swing * 4, hy - 13 - swing * 2); g.stroke(); g.strokeStyle = '#5a4128'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(hx - 1.5, hy - 1); g.lineTo(hx + 2.5, hy + 1); g.stroke(); this.shield(-7.5, by - 15, 5, 6.5, col, age); }
     else if (u.type === 'horseman') { g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 2, by - 4); g.lineTo(hx + 6 + swing * 5, by - 34); g.stroke(); this.poly([[hx + 4.5 + swing * 5, by - 33], [hx + 6 + swing * 5, by - 40], [hx + 7.5 + swing * 5, by - 33]], '#c0c6ce'); }
+    else if (T === 'praetorian') { // short sword and a tall curved shield
+      g.strokeStyle = '#d0d4dc'; g.lineWidth = 2; g.beginPath(); g.moveTo(hx, hy); g.lineTo(hx + 5 + swing * 4, hy - 9 - swing * 2); g.stroke();
+      g.fillStyle = col.main; g.beginPath(); g.roundRect(-11, by - 25, 7.5, 17, 2); g.fill(); g.strokeStyle = '#d8b040'; g.lineWidth = 1; g.strokeRect(-10.5, by - 24.5, 6.5, 16); this.ell(-7.2, by - 16.5, 1.6, 1.6, '#d8b040'); }
+    else if (T === 'hirdman') { // bearded axe and a big round shield
+      const a = 1.9 - (swing + 0.3) * 1.75, tx = hx + Math.sin(a) * 13, ty = hy - Math.cos(a) * 13, px = Math.cos(a), py = Math.sin(a);
+      g.strokeStyle = '#6a4a2a'; g.lineWidth = 1.9; g.beginPath(); g.moveTo(hx - Math.sin(a) * 3, hy + Math.cos(a) * 3); g.lineTo(tx, ty); g.stroke();
+      this.poly([[tx, ty], [tx + px * 6 + Math.sin(a) * 2, ty + py * 6 - Math.cos(a) * 2], [tx + px * 6 - Math.sin(a) * 5, ty + py * 6 + Math.cos(a) * 5], [tx - Math.sin(a) * 3, ty + Math.cos(a) * 3]], '#b4bac4');
+      this.ell(-7.5, by - 16, 6.5, 7, col.main, '#3a2a1a'); g.strokeStyle = col.light; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-7.5, by - 23); g.lineTo(-7.5, by - 9); g.moveTo(-14, by - 16); g.lineTo(-1, by - 16); g.stroke(); this.ell(-7.5, by - 16, 1.6, 1.6, '#9aa0a8'); }
+    else if (T === 'gaesatae') { // long spear held high and a tall oval shield
+      g.strokeStyle = '#6a4d30'; g.lineWidth = 1.7; g.beginPath(); g.moveTo(hx - 3, by - 6 + swing * 4); g.lineTo(hx + 7 + swing * 7, by - 36 + swing * 4); g.stroke(); this.poly([[hx + 5.5 + swing * 7, by - 35 + swing * 4], [hx + 8.5 + swing * 7, by - 43 + swing * 4], [hx + 9 + swing * 7, by - 35 + swing * 4]], '#c0c6ce');
+      this.ell(-8, by - 16, 4, 9, col.dark, '#2e2119'); g.fillStyle = col.light; g.fillRect(-8.6, by - 24, 1.4, 16); this.ell(-8, by - 16, 1.8, 2.4, '#8a6a44'); }
+    else if (T === 'phalangite') { // a very long pike levelled forward and a bronze round shield
+      const lv = 0.35 + swing * 0.25; g.strokeStyle = '#6a4d30'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(hx - 14 * Math.cos(lv), hy + 14 * Math.sin(lv)); g.lineTo(hx + 30 * Math.cos(lv), hy - 30 * Math.sin(lv)); g.stroke();
+      const px = hx + 30 * Math.cos(lv), py = hy - 30 * Math.sin(lv); this.poly([[px - 1.5, py - 1.5], [px + 5 * Math.cos(lv), py - 5 * Math.sin(lv)], [px + 1.5, py + 1.5]], '#c0c6ce');
+      this.ell(-6.5, by - 17, 6.5, 6.5, '#b08a4a', '#6a4a20'); this.ell(-6.5, by - 17, 3.5, 3.5, col.main); }
+    else if (T === 'medjay') { // javelins: one ready, two more in the off hand
+      g.strokeStyle = '#8a6a3a'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(hx - 6, hy + 4 - swing * 3); g.lineTo(hx + 10, hy - 10 - swing * 5); g.stroke(); this.poly([[hx + 9, hy - 10 - swing * 5], [hx + 13, hy - 14 - swing * 5], [hx + 10.5, hy - 8.5 - swing * 5]], '#c0c6ce');
+      g.beginPath(); g.moveTo(-7, by - 8); g.lineTo(-3, by - 32); g.moveTo(-8.5, by - 8); g.lineTo(-5, by - 31); g.stroke(); this.ell(-7, by - 16, 3.5, 5, col.main, '#e8e0cc'); }
+    else if (T === 'steppearcher') { g.strokeStyle = '#5a4128'; g.lineWidth = 2; g.beginPath(); g.moveTo(hx + 1, hy - 9); g.quadraticCurveTo(hx + 8, hy - 6, hx + 3, hy); g.quadraticCurveTo(hx + 8, hy + 6, hx + 1, hy + 9); g.stroke(); g.strokeStyle = '#e8e0d0'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(hx + 1, hy - 9); g.lineTo(hx - 1 - swing * 3, hy); g.lineTo(hx + 1, hy + 9); g.stroke(); g.fillStyle = '#6a4d30'; g.fillRect(-9, by - 20, 3, 10); g.fillStyle = '#e8e0d0'; g.fillRect(-9, by - 22, 3, 2); }
     else if (cls === 'archer') { g.strokeStyle = '#5a4128'; g.lineWidth = 2; g.beginPath(); g.arc(hx + 1, hy, 10, -Math.PI * 0.5, Math.PI * 0.5); g.stroke(); g.strokeStyle = '#e8e0d0'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(hx + 1, hy - 10); g.lineTo(hx + 1, hy + 10); g.stroke(); g.fillStyle = '#6a4d30'; g.fillRect(-8, by - 27, 3, 11); g.fillStyle = '#e8e0d0'; g.fillRect(-8, by - 29, 3, 2); }
     g.restore();
   },
