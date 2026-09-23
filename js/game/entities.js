@@ -18,6 +18,7 @@ class Player {
     this.mods = { atk: {}, armor: {}, range: {}, gather: { food: 0, wood: 0, stone: 0, gold: 0 }, farmYield: 0, villagerSpeed: 0, carry: 0, villagerHp: 0, villagerArmor: 0, towerAtk: 0, towerRange: 0, trainSpeed: 0 };
     this.stats = { gathered: { food: 0, wood: 0, stone: 0, gold: 0 }, kills: 0, losses: 0, razed: 0, trained: 0 };
     this.ai = null;
+    this.grudge = {}; // player id -> when they last drew blood from us
   }
   canAfford(cost) { for (const k in cost) if ((this.res[k] || 0) < cost[k]) return false; return true; }
   missing(cost) { const m = []; for (const k in cost) if ((this.res[k] || 0) < cost[k]) m.push(k); return m; }
@@ -488,6 +489,7 @@ const Sim = {
     if (!t || t.dead) return;
     const dmg = Sim.damageAmount(att, t);
     t.hp -= dmg; t.lastHit = Game.time; t.lastAttacker = att;
+    const victim = Game.players[t.owner]; if (victim && att.owner != null && att.owner !== t.owner && Game.players[att.owner]) victim.grudge[att.owner] = Game.time;
     Game.onDamaged(t, att);
     if (att.kind === 'unit' && att.def.splash && t.kind === 'unit') {
       for (const e of Game.units) if (!e.dead && e !== t && e.owner !== att.owner && U.dist(e.x, e.y, t.x, t.y) <= att.def.splash) { e.hp -= Math.round(dmg * 0.5); if (e.hp <= 0) Sim.kill(e, att); }

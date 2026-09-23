@@ -2,9 +2,9 @@
    The bot plays by the same rules as the human (same costs, same units); difficulty changes its
    targets, tempo and a small gather-rate modifier, not what it is allowed to do. */
 const DIFF = {
-  easy:   { tick: 1.4, villagers: 12, army: 16, attackGap: 240, firstAttack: 480, gather: -0.15, farms: 4, towers: 0, techs: false, walls: false },
-  normal: { tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  walls: true, wallAge: 1, stoneAge: 2, wallVillagers: 14 },
-  hard:   { tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  walls: true, wallAge: 0, stoneAge: 1, wallVillagers: 12 },
+  easy:   { peaceAge: 3, grudge: 240, tick: 1.4, villagers: 12, army: 16, attackGap: 240, firstAttack: 480, gather: -0.15, farms: 4, towers: 0, techs: false, walls: false },
+  normal: { peaceAge: 2, grudge: 360, tick: 1.0, villagers: 20, army: 12, attackGap: 150, firstAttack: 330, gather: 0,     farms: 6, towers: 1, techs: true,  walls: true, wallAge: 1, stoneAge: 2, wallVillagers: 14 },
+  hard:   { peaceAge: 1, grudge: 480, tick: 0.7, villagers: 28, army: 9,  attackGap: 100, firstAttack: 240, gather: 0.15,  farms: 9, towers: 2, techs: true,  walls: true, wallAge: 0, stoneAge: 1, wallVillagers: 12 },
 };
 const AI = {
   create(p) {
@@ -251,23 +251,34 @@ const AI = {
       }
       return;
     }
-    const ready = mil.length >= D.army && Game.time - S.lastAttack >= D.attackGap && Game.time >= D.firstAttack;
+    // early on a bot only goes after whoever has hurt it; it grows bolder with each age
+    const pace = AI.PACE[Math.min(p.age, AI.PACE.length - 1)], provoked = AI.provokers(p).length > 0;
+    const armyNeed = Math.ceil(D.army * pace.army * (provoked && !AI.warlike(p) ? 0.75 : 1));
+    const ready = mil.length >= armyNeed && Game.time - S.lastAttack >= D.attackGap * pace.gap && (Game.time >= D.firstAttack || provoked);
     if (!ready) {
       // gather the army at the frontier so it is not scattered
       if (S.home && S.rng() < 0.2) { const f = AI.frontier(p, S.home, 5); for (const u of mil) if (!u.order && U.dist(u.x, u.y, f.x, f.y) > 6) Sim.setOrder(u, { type: 'attackmove', x: Math.floor(f.x), y: Math.floor(f.y) }); }
       return;
     }
     const target = AI.pickTarget(p, S, null); if (!target) return;
+    if (AI.warlike(p) && !S.warned) { S.warned = true; if (Game.players[Game.human] && Game.players[Game.human].alive && p.id !== Game.human) UI.message(`${p.name} no longer waits to be provoked.`, 'bad'); }
     S.attacking = true; S.attackTarget = target; S.attackStart = Game.time; S.lastAttack = Game.time;
     for (const u of mil) Sim.setOrder(u, { type: 'attackmove', x: Math.floor(target.x), y: Math.floor(target.y) });
     Game.onAIAttack(p, target);
   },
-  /* Nearest enemy building, with a preference for the human player and for soft targets first. */
+  /* How long between attacks and how big an army, by age: patient in the Dawn Age, relentless at the end. */
+  PACE: [{ gap: 1.5, army: 1 }, { gap: 1.25, army: 1 }, { gap: 1, army: 1 }, { gap: 0.75, army: 0.9 }],
+  /* Past its peace age (or after enough time that it should have been) a bot attacks anyone. */
+  warlike(p) { const D = p.ai.D; return Math.max(p.age, Math.floor(Game.time / 900)) >= D.peaceAge; },
+  /* Players who have hurt this bot recently enough to be remembered. */
+  provokers(p) { const out = []; for (const id in p.grudge) if (Game.time - p.grudge[id] < p.ai.D.grudge && Game.players[id] && Game.players[id].alive) out.push(+id); return out; },
+  hostileTo(p, q) { return AI.warlike(p) || (p.grudge[q] != null && Game.time - p.grudge[q] < p.ai.D.grudge); },
+  /* Nearest enemy building it is willing to hit, with a preference for the human player and soft targets first. */
   pickTarget(p, S, near) {
     const from = near || S.home || { x: World.w / 2, y: World.h / 2 };
     let best = null, bs = Infinity;
     for (const b of Game.buildings) {
-      if (b.dead || b.owner === p.id || !Game.players[b.owner].alive) continue;
+      if (b.dead || b.owner === p.id || !Game.players[b.owner].alive || !AI.hostileTo(p, b.owner)) continue;
       let s = U.dist(b.x, b.y, from.x, from.y);
       if (b.owner === Game.human) s *= 0.7;
       if (b.def.attack) s *= 1.6; if (b.type === 'townhall') s *= 1.2; if (b.type === 'house' || b.type === 'farm') s *= 0.9;
