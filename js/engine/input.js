@@ -133,7 +133,7 @@ const Input = {
           else { const z = Renderer.cam.zoom; const dx = (nx - o.x) / (32 * z), dy = (ny - o.y) / (16 * z); Renderer.cam.x -= (dx + dy) / 2; Renderer.cam.y -= (dy - dx) / 2; Renderer.clampCam(); }
         }
         o.x = nx; o.y = ny; }
-      if (this.touches.size === 2 && this.pinch) { const [a, b] = [...this.touches.values()]; const d = U.dist(a.x, a.y, b.x, b.y); const mid = [(a.x + b.x) / 2, (a.y + b.y) / 2]; const target = U.clamp(this.pinch.zoom * (d / this.pinch.d), Renderer.minZoom, Renderer.maxZoom); Renderer.zoomAt(target / Renderer.cam.zoom, mid[0], mid[1]); }
+      if (this.touches.size === 2 && this.pinch) { const [a, b] = [...this.touches.values()]; const d = U.dist(a.x, a.y, b.x, b.y); const mid = [(a.x + b.x) / 2, (a.y + b.y) / 2]; const target = U.clamp(this.pinch.zoom * (d / this.pinch.d), Renderer.minZoom, Renderer.maxZoom); Renderer.zoomTo(target, mid[0], mid[1]); }
     } else {
       for (const t of e.changedTouches) {
         const o = this.touches.get(t.identifier); this.touches.delete(t.identifier); if (!o) continue;

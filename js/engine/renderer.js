@@ -1,10 +1,26 @@
 /* Isometric renderer. Everything is drawn with canvas paths from palettes: no bitmaps, no pixel art.
    World tile (x, y) at height z projects to screen ((x - y) * 32, (x + y) * 16 - z) at zoom 1. */
+/* Rendered sprites, kept per kind (units, buildings, resources) and evicted least-recently-used first, so a busy
+   screen never throws the whole cache away and redraws everything in one frame. */
+class SpriteCache {
+  constructor(caps) { this.caps = caps; this.maps = {}; for (const k in caps) this.maps[k] = new Map(); }
+  map(key) { return this.maps[key[0] === 'u' && key[1] === '|' ? 'u' : key[0] === 'b' && key[1] === '|' ? 'b' : 'r']; }
+  get(key) { const m = this.map(key), sp = m.get(key); if (sp) { m.delete(key); m.set(key, sp); } return sp; }
+  set(key, sp) {
+    const m = this.map(key); m.set(key, sp);
+    const cap = this.caps[key[0] === 'u' && key[1] === '|' ? 'u' : key[0] === 'b' && key[1] === '|' ? 'b' : 'r'];
+    if (m.size > cap) { const it = m.keys(); for (let i = Math.ceil(cap * 0.1); i > 0; i--) m.delete(it.next().value); }
+  }
+  get size() { let n = 0; for (const k in this.maps) n += this.maps[k].size; return n; }
+  clear() { for (const k in this.maps) this.maps[k].clear(); }
+}
+const newSprites = () => new SpriteCache({ u: 1600, b: 260, r: 500 });
+
 const Renderer = {
   canvas: null, g: null, W: 0, H: 0, dpr: 1,
   cam: { x: 0, y: 0, zoom: 1 }, ZOOMS: [0.45, 0.56, 0.7, 0.85, 1, 1.25, 1.55, 1.9], minZoom: 0.45, maxZoom: 1.9,
   time: 0, hover: null, hoverRes: null, ghost: null, selBox: null,
-  tileColor: null, tileDeco: null, terrainTex: null, fogTex: null, fogDirty: true, sprites: new Map(), view: null,
+  tileColor: null, tileDeco: null, terrainTex: null, fogTex: null, fogDirty: true, sprites: newSprites(), view: null,
   mini: null, mg: null, miniTerrain: null, miniFog: null, miniT: 0,
 
   init(canvas, mini) {
@@ -103,7 +119,7 @@ const Renderer = {
     for (let i = 0; i < n; i++) { mg.fillStyle = this.tileColor[i]; mg.fillRect(i % w, Math.floor(i / w), 1, 1); }
     this.miniFog = document.createElement('canvas'); this.miniFog.width = w; this.miniFog.height = h;
     this.fogTex = document.createElement('canvas'); this.fogTex.width = w; this.fogTex.height = h;
-    this.fogDirty = true; this.miniT = 0; this.sprites = new Map();
+    this.fogDirty = true; this.miniT = 0; this.sprites = newSprites();
   },
   /* The fog texture: one pixel per tile, drawn with the same transform as the ground, bilinear-smoothed. */
   updateFogTex() {
@@ -227,6 +243,14 @@ const Renderer = {
   /* Light comes from the upper left, so shadows fall to the lower right. */
   castShadow(x, y, len, ry) { const g = this.g; g.fillStyle = this.SHADOW; g.beginPath(); g.ellipse(x + len * 0.45, y + 1, len * 0.7, ry, 0.18, 0, Math.PI * 2); g.fill(); },
   SHADOW: '#010203', // marker colour: oldSchool() turns it into a translucent shadow
+  /* Pinch: go to the step nearest the requested zoom (zoomAt always moves a whole step, which made a gentle
+     pinch flick back and forth between two steps on every finger movement). */
+  zoomTo(target, sx, sy) {
+    const Z = this.ZOOMS; let i = 0; for (let k = 0; k < Z.length; k++) if (Math.abs(Math.log(Z[k] / target)) < Math.abs(Math.log(Z[i] / target))) i = k;
+    if (Z[i] === this.cam.zoom) return;
+    const [wx, wy] = this.toWorld(sx, sy); this.cam.zoom = Z[i];
+    const [nx, ny] = this.toWorld(sx, sy); this.cam.x += wx - nx; this.cam.y += wy - ny; this.clampCam();
+  },
   shadow(x, y, rx, ry, a) { this.ell(x, y, rx, ry, this.SHADOW); },
   dimIf() { return true; },
 
@@ -234,7 +258,7 @@ const Renderer = {
   drawResource(r) {
     const z = this.cam.zoom, zq = this.zq(z);
     const vq = Math.floor(r.v * 8), lvl = r.max ? Math.min(2, Math.floor((r.amount / r.max) * 3)) : 0;
-    const key = r.kind + '|' + vq + '|' + lvl + '|' + zq.toFixed(3);
+    const key = r.kind + '|' + vq + '|' + lvl;
     let sp = this.sprites.get(key);
     if (!sp) {
       const k = this.spriteK(zq), W = Math.ceil(128 * k), H = Math.ceil(150 * k), ax = W / 2, ay = H - 20 * k;
@@ -244,8 +268,7 @@ const Renderer = {
       const fake = { kind: r.kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: (vq + 0.5) / 8, amount: (lvl + 0.5) / 3, max: 1 };
       this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
-      if (this.sprites.size > 500) this.sprites.clear();
+      sp = { cv: this.freeze(cv), ax, ay, k }; this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
     // picked out under the pointer, and ringed while selected
@@ -374,7 +397,7 @@ const Renderer = {
     const z = this.cam.zoom, zq = this.zq(z), s = b.size;
     const grown = b.def.farm ? (b.worker && !b.worker.dead ? 1 : 0) : 0;
     const mask = b.def.wall ? World.wallMask(b) : 0;
-    const key = 'b|' + b.type + '|' + b.ageVisual + '|' + b.owner + '|' + grown + '|' + mask + '|' + zq.toFixed(3);
+    const key = 'b|' + b.type + '|' + b.ageVisual + '|' + b.owner + '|' + grown + '|' + mask;
     let sp = this.sprites.get(key);
     if (!sp) {
       const k = this.spriteK(zq), hgt = this.height(b) + 70, W = Math.ceil((s * 64 + 72) * k), H = Math.ceil((s * 32 + hgt + 40) * k), ax = W / 2 - 8 * k, ay = hgt * k;
@@ -386,8 +409,7 @@ const Renderer = {
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
       this.mat = null; const flags = this.flags; this.flags = null; this.oldSchool(cv, 9, b.def.shape === 'wall'); // wall pieces butt together, so no outline at their ends
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv, ax, ay, k, flags }; this.sprites.set(key, sp);
-      if (this.sprites.size > 500) this.sprites.clear();
+      sp = { cv: this.freeze(cv), ax, ay, k, flags }; this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(b.tx, b.ty, 0);
     this.stamp(sp, sx, sy);
@@ -398,9 +420,10 @@ const Renderer = {
     for (const f of sp.flags || []) this.flag(this.P(f[0], f[1], f[2]), col);
     if (sh === 'smithy') { const c = this.P(s * 0.82, s * 0.32, 32); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(s, s * 0.25, 9); this.ell(w[0], w[1], 4, 3, `rgba(255,140,40,${0.6 + 0.3 * Math.sin(this.time * 7)})`); }
   },
-  /* Sprites are rasterised at one texel per CSS pixel (or smaller when zoomed out) and stamped with
-     nearest-neighbour scaling, so zooming in shows chunky pixels the way the old pre-rendered games did. */
-  spriteK(zq) { return Math.min(zq, 1); },
+  /* Sprites are rasterised once, at one texel per zoom-1 pixel, whatever the zoom: changing zoom never redraws
+     anything. Zoomed in they are stamped with nearest-neighbour scaling for the chunky pre-rendered look;
+     zoomed out below one texel per screen pixel they are filtered down instead. */
+  spriteK() { return 1; },
   /* The "pre-rendered" pass: hard alpha, film grain, a limited palette, and a dark one-pixel outline. */
   oldSchool(cv, grain, noOutline) {
     const g = cv.getContext('2d'), w = cv.width, h = cv.height; if (!w || !h) return;
@@ -419,9 +442,12 @@ const Renderer = {
     }
     g.putImageData(img, 0, 0);
   },
+  /* The old-school pass reads pixels back, which leaves a canvas in slow CPU memory and makes every later
+     draw of it re-upload. Stamping a copy that is never read keeps sprites on the GPU. */
+  freeze(cv) { const out = document.createElement('canvas'); out.width = cv.width; out.height = cv.height; out.getContext('2d').drawImage(cv, 0, 0); return out; },
   stamp(sp, sx, sy, glow) {
     const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
-    g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = false;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = sc < 0.99;
     if (glow) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = glow; }
     g.drawImage(sp.cv, Math.round(sx * dpr - sp.ax * sc), Math.round(sy * dpr - sp.ay * sc), Math.round(sp.cv.width * sc), Math.round(sp.cv.height * sc));
     if (glow) { g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; }
@@ -828,7 +854,7 @@ const Renderer = {
     let swing = u.swing > 0.2 ? 2 : u.swing > 0 ? 1 : 0;
     if (pose.working) swing = 3 + (Math.floor((u.anim % (Math.PI * 2)) / (Math.PI * 2) * 4) & 3);
     const carry = u.carry.amt > 0 ? u.carry.kind : '';
-    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + pose.tool + '|' + zq.toFixed(3);
+    const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + pose.tool;
     let sp = this.sprites.get(key);
     if (!sp) {
       const k = this.spriteK(zq), W = Math.ceil(72 * k), H = Math.ceil(76 * k), ax = W / 2, ay = H - 8 * k;
@@ -841,8 +867,7 @@ const Renderer = {
       this.drawUnitVector(u, p, flip ? -1 : 1, walk, sw, pose.tool, swing >= 3);
       this.oldSchool(cv, 8);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
-      if (this.sprites.size > 700) this.sprites.clear();
+      sp = { cv: this.freeze(cv), ax, ay, k }; this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(u.x, u.y, 0);
     this.stamp(sp, sx, sy); u.spr = sp;
