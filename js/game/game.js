@@ -178,6 +178,16 @@ const Game = {
     const vill = units.filter((u) => u.type === 'villager'), mil = units.filter((u) => u.type !== 'villager');
     const target = t.unit && t.unit.owner !== this.human ? t.unit : t.bld && t.bld.owner !== this.human ? t.bld : null;
     if (mode === 'repair' && !(t.bld && t.bld.owner === this.human)) { UI.toast('Pick one of your buildings to repair'); return; }
+    if (mode === 'garrison') {
+      const b = t.bld;
+      if (!b || b.owner !== this.human || !b.built || !b.def.garrison) { UI.toast('Pick your Town Hall, a tower or a keep'); Sfx.play('error'); return; }
+      const takers = units.filter((u) => Sim.canGarrison(u, b)); const room = b.def.garrison - b.garrison.length;
+      if (!takers.length) { UI.toast('Only villagers and foot soldiers can go inside'); Sfx.play('error'); return; }
+      if (room <= 0) { UI.toast(b.def.name + ' is full'); Sfx.play('error'); return; }
+      takers.slice(0, room).forEach((u) => Sim.setOrder(u, { type: 'garrison', bld: b, prev: u.order && (u.order.type === 'gather' || u.order.type === 'build') ? u.order : null }));
+      if (takers.length > room) UI.toast('Room for ' + room + ' inside');
+      Sfx.play('ack'); this.ping(b.x, b.y); return;
+    }
     if (mode === 'attackmove') { this.spread(mil, tx, ty, 'attackmove'); this.spread(vill, tx, ty, 'move'); this.ping(t.x, t.y, '#d8484a'); Sfx.play('ack'); return; }
     if (mode === 'move' || (t.unit && t.unit.owner === this.human && !target)) { this.spread(units, tx, ty, 'move'); this.ping(t.x, t.y); Sfx.play('ack'); return; }
     if (target) { for (const u of units) Sim.setOrder(u, { type: 'attack', target }); this.ping(target.x, target.y, '#d8484a'); Sfx.play('ack'); return; }

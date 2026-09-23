@@ -382,31 +382,27 @@ const Renderer = {
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
       this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const fake = { tx: 0, ty: 0, size: s, x: s / 2, y: s / 2, def: b.def, type: b.type, built: true, worker: grown ? { dead: false } : null, owner: b.owner, ageVisual: b.ageVisual, mask };
-      this.at(0, 0, 0); this.footShadow(fake); this.mat = age;
+      this.at(0, 0, 0); this.footShadow(fake); this.mat = age; this.flags = [];
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
-      this.mat = null; this.oldSchool(cv, 9);
+      this.mat = null; const flags = this.flags; this.flags = null; this.oldSchool(cv, 9, b.def.shape === 'wall'); // wall pieces butt together, so no outline at their ends
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv, ax, ay, k }; this.sprites.set(key, sp);
+      sp = { cv, ax, ay, k, flags }; this.sprites.set(key, sp);
       if (this.sprites.size > 500) this.sprites.clear();
     }
     const [sx, sy] = this.toScreen(b.tx, b.ty, 0);
     this.stamp(sp, sx, sy);
     // live parts
     this.at(b.tx, b.ty, 0);
+    // each shape says where its poles stand while it is drawn, so the cloth waves from the roof it belongs to
     const col = p.color.main, sh = b.def.shape;
-    if (sh === 'hall' && b.ageVisual === 0) { const t = this.P(1.5, 1.5, 56); this.flag([t[0], t[1]], col); }
-    else if (sh === 'hall') { const t = this.P(s - 0.4, s - 0.4, 40); this.flag([t[0], t[1] - 12], col); this.flag(this.P(s, 0, this.height(b) + 4), col); }
-    else if (sh === 'tower') this.flag(this.P(0.5, 0.5, 62), col);
-    else if (sh === 'keep') this.flag(this.P(s * 0.5, s * 0.5, 50), col);
-    else if (sh === 'monument') { const t = this.P(s / 2, s / 2, 48); this.flag([t[0], t[1] - 44], col); }
-    else if (sh !== 'farm' && sh !== 'wall' && sh !== 'gate') this.flag(this.P(s, 0, this.height(b) + 4), col);
+    for (const f of sp.flags || []) this.flag(this.P(f[0], f[1], f[2]), col);
     if (sh === 'smithy') { const c = this.P(s * 0.82, s * 0.32, 32); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(s, s * 0.25, 9); this.ell(w[0], w[1], 4, 3, `rgba(255,140,40,${0.6 + 0.3 * Math.sin(this.time * 7)})`); }
   },
   /* Sprites are rasterised at one texel per CSS pixel (or smaller when zoomed out) and stamped with
      nearest-neighbour scaling, so zooming in shows chunky pixels the way the old pre-rendered games did. */
   spriteK(zq) { return Math.min(zq, 1); },
   /* The "pre-rendered" pass: hard alpha, film grain, a limited palette, and a dark one-pixel outline. */
-  oldSchool(cv, grain) {
+  oldSchool(cv, grain, noOutline) {
     const g = cv.getContext('2d'), w = cv.width, h = cv.height; if (!w || !h) return;
     const img = g.getImageData(0, 0, w, h), d = img.data, n = w * h;
     const solid = new Uint8Array(n); let seed = (w * 7919 + h * 104729) >>> 0; grain = grain == null ? 11 : grain;
@@ -417,7 +413,7 @@ const Renderer = {
       seed = (seed * 1664525 + 1013904223) >>> 0; const gr = ((seed >>> 16) % (grain * 2 + 1)) - grain;
       for (let c = 0; c < 3; c++) d[o + c] = U.clamp(Math.round((d[o + c] + gr) / 8) * 8, 0, 255);
     }
-    for (let i = 0; i < n; i++) {
+    if (!noOutline) for (let i = 0; i < n; i++) {
       if (!solid[i]) continue; const x = i % w, y = (i - x) / w;
       if ((x > 0 && !solid[i - 1]) || (x < w - 1 && !solid[i + 1]) || (y > 0 && !solid[i - w]) || (y < h - 1 && !solid[i + w])) { const o = i * 4; d[o] = d[o] * 0.45; d[o + 1] = d[o + 1] * 0.45; d[o + 2] = d[o + 2] * 0.45; }
     }
@@ -432,7 +428,7 @@ const Renderer = {
   },
   zq(z) { const Z = this.ZOOMS; let i = 0; for (let k = 0; k < Z.length; k++) if (Math.abs(Z[k] - z) < Math.abs(Z[i] - z)) i = k; return Z[i]; },
   footShadow(b) {
-    if (b.def.passable) return;
+    if (b.def.passable || b.def.shape === 'wall') return;
     const s = b.size, h = this.height(b) * 0.55, A = this.P(0, 0), B = this.P(s, 0), C = this.P(s, s), D = this.P(0, s);
     // the footprint plus a wedge thrown to the lower right by the walls
     this.poly([A, B, [B[0] + h * 0.9, B[1] + h * 0.45], [C[0] + h * 0.9, C[1] + h * 0.45], C, D], this.SHADOW);
@@ -484,7 +480,11 @@ const Renderer = {
     for (let k = 1; k < 4; k++) { const t = k / 4; g.beginPath(); g.moveTo(U.lerp(M1[0], D[0], t), U.lerp(M1[1], D[1], t)); g.lineTo(U.lerp(M2[0], C[0], t), U.lerp(M2[1], C[1], t)); g.stroke(); }
     // gable end (right face triangle)
     this.poly([P(x1, y0, h), P(x1, y1, h), P(x1, ym, h + rise)], U.shade(roofDark, -0.15));
+    this.flagSpot(x1 - 0.15, ym, h + rise - 1, true);
   },
+  /* Shapes call this while their sprite is drawn: a flag pole planted at world offset (x, y, z). The first
+     gable roof offers its ridge end as a fallback; an explicit spot replaces it. */
+  flagSpot(x, y, z, fallback) { if (!this.flags) return; if (fallback) { if (!this.flags.length) { this.flags.push([x, y, z]); this.flags.fallback = true; } return; } if (this.flags.fallback) { this.flags.length = 0; this.flags.fallback = false; } this.flags.push([x, y, z]); },
   flag(at, color) { const g = this.g; g.strokeStyle = '#3a2a1a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(at[0], at[1]); g.lineTo(at[0], at[1] - 16); g.stroke(); const wv = Math.sin(this.time * 4 + at[0]) * 1.5; this.poly([[at[0], at[1] - 16], [at[0] + 10, at[1] - 13 + wv], [at[0], at[1] - 9]], color); },
   door(x, y, z, face, color) { // small arched door on the left (face 'L') or right ('R') wall at world point (x, y)
     const g = this.g; const [sx, sy] = this.P(x, y, z); const dx = face === 'L' ? 5 : -5;
@@ -519,7 +519,7 @@ const Renderer = {
     this.gable(0, 0, s, s, 26, 18, age.roof, age.roofDark);
     // corner turret with banner
     this.box(s - 0.8, s - 0.8, s, s, 0, 40, age.wall, age.wallDark, age.trim);
-    const t = this.P(s - 0.4, s - 0.4, 40); this.poly([[t[0] - 12, t[1] + 4], [t[0], t[1] - 14], [t[0] + 12, t[1] + 4]], age.roofDark);
+    const t = this.P(s - 0.4, s - 0.4, 40); this.poly([[t[0] - 12, t[1] + 4], [t[0], t[1] - 14], [t[0] + 12, t[1] + 4]], age.roofDark); this.flagSpot(s - 0.4, s - 0.4, 53);
     // team banner on left face
     const bn = this.P(0, s * 0.8, 18); g.fillStyle = p.color.main; g.fillRect(bn[0] - 3, bn[1] - 8, 6, 14); g.fillStyle = age.trim; g.fillRect(bn[0] - 4, bn[1] - 9, 8, 2);
   },
@@ -563,7 +563,7 @@ const Renderer = {
     const cr = P(1.3, 1.3, 11); g.fillStyle = '#8a6a44'; g.fillRect(cr[0] - 6, cr[1] - 10, 12, 9); g.fillStyle = '#a3845a'; g.fillRect(cr[0] - 6, cr[1] - 10, 12, 2);
     const sk = P(1.9, 1.7, 11); this.ell(sk[0], sk[1] - 3, 5, 3.5, '#c9a66b'); this.ell(sk[0] - 7, sk[1] - 1, 4.5, 3, '#b8955c');
     const br = P(0.5, 2.55, 5); this.ell(br[0], br[1] - 7, 4, 2.2, '#6a4a2a'); g.fillStyle = '#7a5a3a'; g.fillRect(br[0] - 4, br[1] - 7, 8, 7); this.ell(br[0], br[1], 4, 2.2, '#5a3f22');
-    canopyRoof(0.65, 0.65, 2.4, 2.4, 39, 16, true);
+    canopyRoof(0.65, 0.65, 2.4, 2.4, 39, 16, true); this.flagSpot(1.525, 1.525, 54);
     // a small hearth in the yard
     const fh = P(2.6, 2.6, 0); this.ell(fh[0], fh[1], 4.5, 2.3, '#4a4038'); g.fillStyle = '#e07a2a'; g.fillRect(fh[0] - 1.5, fh[1] - 3, 3, 2.5); g.fillStyle = '#ffd060'; g.fillRect(fh[0] - 0.5, fh[1] - 4, 1.2, 1.5);
   },
@@ -624,6 +624,7 @@ const Renderer = {
     // chimney with smoke
     this.box(s * 0.7, s * 0.2, s * 0.95, s * 0.45, 18, 14, age.wallDark, U.shade(age.wallDark, -0.2), '#3a3030');
     // anvil and glow
+    this.flagSpot(s * 0.25, s * 0.25, 18);
     const a = this.P(-0.2, s * 0.6, 0); g.fillStyle = '#3a3a40'; g.fillRect(a[0] - 6, a[1] - 6, 12, 4); g.fillRect(a[0] - 3, a[1] - 3, 6, 4);
   },
   shape_tower(b, age, p) {
@@ -632,13 +633,14 @@ const Renderer = {
     // crenellations
     for (const [x, y] of [[0.1, 0.1], [s - 0.1, 0.1], [s - 0.1, s - 0.1], [0.1, s - 0.1], [0.5, 0.1], [0.1, 0.5], [s - 0.1, 0.5], [0.5, s - 0.1]]) this.box(x - 0.12, y - 0.12, x + 0.12, y + 0.12, h, 6, age.wall, age.wallDark, age.trim);
     this.window(0.1, 0.5, h * 0.55, 'L'); this.window(s - 0.1, 0.5, h * 0.55, 'R');
+    this.flagSpot(s / 2, s / 2, h + 6);
   },
   shape_keep(b, age, p) {
     const s = b.size, h = 46;
     this.box(0, 0, s, s, 0, h, age.wall, age.wallDark, age.trim);
     for (const [x, y] of [[0, 0], [s, 0], [s, s], [0, s]]) this.box(x - 0.25, y - 0.25, x + 0.25, y + 0.25, 0, h + 14, age.wall, age.wallDark, age.roofDark);
     for (let k = 0.4; k < s; k += 0.55) { this.box(k - 0.1, -0.05, k + 0.1, 0.05, h, 5, age.wall, age.wallDark, age.trim); this.box(k - 0.1, s - 0.05, k + 0.1, s + 0.05, h, 5, age.wall, age.wallDark, age.trim); }
-    this.door(0, s * 0.5, 0, 'L', '#2a1a10'); this.window(s, s * 0.3, 26, 'R'); this.window(s, s * 0.7, 26, 'R'); this.window(0, s * 0.25, 26, 'L');
+    this.flagSpot(0, 0, h + 14); this.door(0, s * 0.5, 0, 'L', '#2a1a10'); this.window(s, s * 0.3, 26, 'R'); this.window(s, s * 0.7, 26, 'R'); this.window(0, s * 0.25, 26, 'L');
   },
   shape_library(b, age, p) {
     const s = b.size, g = this.g;
@@ -647,7 +649,7 @@ const Renderer = {
     for (let k = 0.3; k < s; k += 0.6) { const c0 = this.P(0, k, 0), c1 = this.P(0, k, 24); g.strokeStyle = U.shade(age.wall, 0.25); g.lineWidth = 3; g.beginPath(); g.moveTo(c0[0] - 2, c0[1]); g.lineTo(c1[0] - 2, c1[1]); g.stroke(); }
     // dome
     const d = this.P(s / 2, s / 2, 24); this.ell(d[0], d[1] - 2, s * 18, s * 9, age.roofDark); this.ell(d[0], d[1] - 4, s * 16, s * 14, age.roof); this.ell(d[0] - s * 5, d[1] - s * 8, s * 6, s * 4, U.alpha('#ffffff', 0.18));
-    g.fillStyle = age.trim; g.beginPath(); g.arc(d[0], d[1] - 4 - s * 14, 3, 0, 7); g.fill();
+    g.fillStyle = age.trim; g.beginPath(); g.arc(d[0], d[1] - 4 - s * 14, 3, 0, 7); g.fill(); this.flagSpot(s / 2, s / 2, 26 + s * 14);
     this.door(0, s * 0.5, 0, 'L', '#3a2a1a');
   },
   shape_workshop(b, age, p) {
@@ -667,28 +669,97 @@ const Renderer = {
     for (const [x, y] of [[1.3, 1.3], [s - 1.3, 1.3], [s - 1.3, s - 1.3], [1.3, s - 1.3]]) this.box(x - 0.15, y - 0.15, x + 0.15, y + 0.15, 48, 14, stone, dark, '#c9a54a');
     const top = this.P(s / 2, s / 2, 48); this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62)], '#c9a54a');
     this.poly([this.P(1.4, 1.4, 62), this.P(s - 1.4, 1.4, 62), this.P(s / 2, s / 2, 92)], '#e0c060'); this.poly([this.P(s - 1.4, 1.4, 62), this.P(s - 1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#b08a30'); this.poly([this.P(s - 1.4, s - 1.4, 62), this.P(1.4, s - 1.4, 62), this.P(s / 2, s / 2, 92)], '#d8b040');
+    this.flagSpot(s / 2, s / 2, 91);
   },
-  /* Wall pieces join up with their neighbours: a post in the middle and a run towards every connected side. */
+  /* Wall pieces join up with their neighbours: a run from the middle of the square to every connected side or
+     corner, so a line of pieces reads as one continuous wall, diagonals included. */
   wallCols(b) { return b.def.wall === 'stone' ? { wall: '#9a948a', dark: '#6e6960', top: '#b8b2a6', mat: 'stone' } : { wall: '#8d6c3e', dark: '#5f4728', top: '#a88852', mat: 'plank' }; },
+  WALL_DIRS: [[1, 0, 1], [0, 1, 2], [-1, 0, 4], [0, -1, 8], [1, -1, 16], [1, 1, 32], [-1, 1, 64], [-1, -1, 128]],
+  wallRuns(m) { const out = []; for (const [dx, dy, bit] of this.WALL_DIRS) if (m & bit) out.push([dx, dy]); return out; },
+  /* A straight slab of height h and thickness t between two ground points, in any direction: the faces turned
+     towards the viewer, shaded by which way they face, then the top. */
+  slab(x0, y0, x1, y1, z0, h, t, c, tex) {
+    const L = Math.hypot(x1 - x0, y1 - y0) || 1, nx = -(y1 - y0) / L * t / 2, ny = (x1 - x0) / L * t / 2;
+    const base = [[x0 + nx, y0 + ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x0 - nx, y0 - ny]];
+    const faces = [];
+    for (let i = 0; i < 4; i++) {
+      const a = base[i], b = base[(i + 1) % 4], ex = b[0] - a[0], ey = b[1] - a[1], ox = -ey, oy = ex; // outward normal
+      const facing = ox + oy; if (facing <= 1e-6) continue;
+      const lit = oy / (Math.abs(ox) + Math.abs(oy)); // +1 faces +y (the lit left face), 0 faces +x (the shaded right face)
+      faces.push({ a, b, depth: (a[0] + a[1] + b[0] + b[1]) / 2, col: U.lerpColor(c.dark, c.wall, lit) });
+    }
+    faces.sort((p, q) => p.depth - q.depth);
+    for (const f of faces) {
+      const q = [this.P(f.a[0], f.a[1], z0 + h), this.P(f.b[0], f.b[1], z0 + h), this.P(f.b[0], f.b[1], z0), this.P(f.a[0], f.a[1], z0)];
+      if (q[0][0] > q[1][0]) { q.reverse(); q.push(q.shift()); q.push(q.shift()); }
+      this.poly(q, f.col); if (tex && h > 8) this.texQuad(q, tex, f.col);
+    }
+    this.poly(base.map(([x, y]) => this.P(x, y, z0 + h)), c.top);
+  },
+  /* One sharpened log standing at ground point (x, y). */
+  stake(x, y, h, w, c) {
+    const [bx, by] = this.P(x, y, 0), top = by - h, g = this.g;
+    g.fillStyle = c.dark; g.fillRect(bx - w / 2, top, w, h);
+    g.fillStyle = c.wall; g.fillRect(bx - w / 2, top, w * 0.55, h);
+    g.fillStyle = U.alpha('#ffffff', 0.18); g.fillRect(bx - w / 2 + 0.6, top + 1, 0.9, h - 2);
+    this.poly([[bx - w / 2, top], [bx, top - w * 1.1], [bx + w / 2, top]], c.top);
+    g.fillStyle = U.alpha('#000000', 0.25); g.fillRect(bx - w / 2, top + h * 0.3, w, 1); // lashing
+  },
   shape_wall(b, age, p) {
     const g = this.g, c = this.wallCols(b), m = b.mask || 0, h = this.height(b), stone = b.def.wall === 'stone';
-    const saveMat = this.mat; this.mat = { wallMat: c.mat };
-    const runs = []; if (m & 4) runs.push([0, 0.34, 0.5, 0.66]); if (m & 8) runs.push([0.34, 0, 0.66, 0.5]); if (m & 1) runs.push([0.5, 0.34, 1, 0.66]); if (m & 2) runs.push([0.34, 0.5, 0.66, 1]);
-    for (const [x0, y0, x1, y1] of runs) {
-      this.box(x0, y0, x1, y1, 0, h, c.wall, c.dark, c.top);
-      if (stone) { for (let t = 0.1; t < 1; t += 0.3) { const cx = U.lerp(x0, x1, t), cy = U.lerp(y0, y1, t); this.box(cx - 0.06, cy - 0.06, cx + 0.06, cy + 0.06, h, 4, c.wall, c.dark, c.top); } }
-      else { g.fillStyle = c.top; for (let t = 0.08; t < 1; t += 0.16) { const q = this.P(U.lerp(x0, x1, t), U.lerp(y0, y1, t), h); this.poly([[q[0] - 3, q[1] + 2], [q[0], q[1] - 5], [q[0] + 3, q[1] + 2]], c.top); } }
+    const runs = this.wallRuns(m), T = stone ? 0.42 : 0.22;
+    // shadow along each run rather than under the whole square
+    const sh = h * 0.5;
+    const shadowRun = (x1, y1) => { const A = this.P(0.5, 0.5), B = this.P(x1, y1); this.poly([[A[0] - 4, A[1]], [B[0] - 4, B[1]], [B[0] + sh * 0.9, B[1] + sh * 0.45 + 2], [A[0] + sh * 0.9, A[1] + sh * 0.45 + 2]], this.SHADOW); };
+    for (const [dx, dy] of runs) shadowRun(0.5 + dx * 0.5, 0.5 + dy * 0.5);
+    if (!runs.length) { const A = this.P(0.3, 0.3), C = this.P(0.7, 0.7); this.poly([[A[0], A[1]], [C[0] + sh, C[1] + sh * 0.5], [C[0], C[1]]], this.SHADOW); }
+    if (stone) {
+      // back runs first, then the pier (only where the wall turns or ends), then front runs
+      const straight = runs.length === 2 && runs[0][0] === -runs[1][0] && runs[0][1] === -runs[1][1];
+      const order = runs.slice().sort((r, s2) => (r[0] + r[1]) - (s2[0] + s2[1]));
+      const run = ([dx, dy]) => {
+        const x1 = 0.5 + dx * 0.5, y1 = 0.5 + dy * 0.5;
+        if (dx === dy) {
+          // a run pointing straight down (or up) the screen would show only its top, so build it as a
+          // staircase of short blocks, the way the old games drew their diagonal walls
+          const r = T / 2, steps = [0.1, 0.24, 0.38, 0.5].map((d) => [0.5 + dx * d, 0.5 + dy * d]);
+          if (dx < 0) steps.reverse();
+          for (const [cx, cy] of steps) { this.box(cx - r, cy - r, cx + r, cy + r, 0, h, c.wall, c.dark, c.top); this.box(cx - r * 0.45, cy - r * 0.45, cx + r * 0.45, cy + r * 0.45, h, 5, c.wall, c.dark, c.top); }
+          return;
+        }
+        this.slab(0.5, 0.5, x1, y1, 0, h, T, c, c.mat);
+        const len = Math.hypot(dx, dy) * 0.5, n = Math.max(1, Math.round(len / 0.2));
+        for (let i = 0; i < n; i++) { const t0 = (i + 0.2) / n, t1 = (i + 0.7) / n; this.slab(U.lerp(0.5, x1, t0), U.lerp(0.5, y1, t0), U.lerp(0.5, x1, t1), U.lerp(0.5, y1, t1), h, 6, T, c); } // merlons with gaps between
+      };
+      for (const r of order) if (r[0] + r[1] < 0 || (r[0] + r[1] === 0 && r[0] < 0)) run(r);
+      if (!straight) { this.box(0.27, 0.27, 0.73, 0.73, 0, h + 7, c.wall, c.dark, c.top); this.box(0.24, 0.24, 0.76, 0.76, h + 7, 3, c.wall, c.dark, c.top); }
+      for (const r of order) if (!(r[0] + r[1] < 0 || (r[0] + r[1] === 0 && r[0] < 0))) run(r);
+      return;
     }
-    this.box(0.3, 0.3, 0.7, 0.7, 0, h + (stone ? 6 : 4), c.wall, c.dark, c.top);
-    if (!stone) { const q = this.P(0.5, 0.5, h + 4); this.poly([[q[0] - 5, q[1] + 3], [q[0], q[1] - 6], [q[0] + 5, q[1] + 3]], c.top); }
-    this.mat = saveMat;
+    // palisade: tightly packed sharpened logs along every run, drawn back to front, with a rail on the near side
+    const logs = [];
+    let seed = (m * 2654435761) >>> 0; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed >>> 8) / 16777216; };
+    const add = (x, y) => logs.push([x, y, h - 2 + rnd() * 4]);
+    add(0.5, 0.5);
+    for (const [dx, dy] of runs) { const x1 = 0.5 + dx * 0.5, y1 = 0.5 + dy * 0.5, [sx0, sy0] = this.P(0.5, 0.5), [sx1, sy1] = this.P(x1, y1), n = Math.max(2, Math.round(Math.hypot(sx1 - sx0, sy1 - sy0) / 4)); for (let i = 1; i <= n; i++) { const o = dx === dy ? (i % 2 ? 0.06 : -0.06) : 0; add(U.lerp(0.5, x1, i / n) + o, U.lerp(0.5, y1, i / n) - o); } }
+    if (!runs.length) { add(0.4, 0.5); add(0.6, 0.5); add(0.5, 0.4); add(0.5, 0.6); }
+    logs.sort((a, q) => (a[0] + a[1]) - (q[0] + q[1]) || this.P(a[0], a[1])[0] - this.P(q[0], q[1])[0]);
+    for (const [x, y, lh] of logs) this.stake(x, y, lh, 5, c);
+    g.strokeStyle = U.shade(c.dark, -0.25); g.lineWidth = 1.6;
+    for (const [dx, dy] of runs) { if (dx + dy < 0 || (dx + dy === 0 && dx < 0)) continue; const a = this.P(0.5 + 0.08, 0.5 + 0.08, h * 0.45), e = this.P(0.5 + dx * 0.5 + 0.08, 0.5 + dy * 0.5 + 0.08, h * 0.45); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(e[0], e[1]); g.stroke(); }
   },
   shape_gate(b, age, p) {
     const g = this.g, c = this.wallCols(b), m = b.mask || 0, h = this.height(b), stone = b.def.wall === 'stone';
     const alongX = (m & 5) || !(m & 10); // walls east/west: the opening runs north-south
     const saveMat = this.mat; this.mat = { wallMat: c.mat };
     const piers = alongX ? [[0, 0.3, 0.28, 0.7], [0.72, 0.3, 1, 0.7]] : [[0.3, 0, 0.7, 0.28], [0.3, 0.72, 0.7, 1]];
-    for (const [x0, y0, x1, y1] of piers) this.box(x0, y0, x1, y1, 0, h, c.wall, c.dark, c.top);
+    if (stone) for (const [x0, y0, x1, y1] of piers) this.box(x0, y0, x1, y1, 0, h, c.wall, c.dark, c.top);
+    else {
+      // two posts of bound logs, taller than the palisade either side
+      const logs = []; for (const [x0, y0, x1, y1] of piers) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) logs.push([U.lerp(x0 + 0.04, x1 - 0.04, i / 2), U.lerp(y0 + 0.04, y1 - 0.04, j / 2)]);
+      logs.sort((a, q) => (a[0] + a[1]) - (q[0] + q[1]) || this.P(a[0], a[1])[0] - this.P(q[0], q[1])[0]);
+      logs.forEach(([x, y], i) => this.stake(x, y, h - 4 + ((i * 7) % 5), 5, c));
+    }
     // lintel over the opening and two open doors
     const a = alongX ? this.P(0.14, 0.5, h - 4) : this.P(0.5, 0.14, h - 4), d = alongX ? this.P(0.86, 0.5, h - 4) : this.P(0.5, 0.86, h - 4);
     g.strokeStyle = c.dark; g.lineWidth = 6; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(d[0], d[1]); g.stroke(); g.strokeStyle = c.top; g.lineWidth = 2; g.beginPath(); g.moveTo(a[0], a[1] - 2); g.lineTo(d[0], d[1] - 2); g.stroke();

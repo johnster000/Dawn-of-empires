@@ -24,9 +24,14 @@ const World = {
     return !!(b.def.gate && owner != null && b.owner === owner); // gates open for their owner
   },
   /* Neighbouring wall pieces of the same owner: bit 1 east (+x), 2 south (+y), 4 west, 8 north. */
+  /* Which neighbours a wall piece joins: bits 1 E, 2 S, 4 W, 8 N, then the diagonals 16 NE, 32 SE, 64 SW,
+     128 NW. A diagonal only counts when neither square beside it is wall, so a staircase run joins corner to
+     corner while an L-shaped bend doesn't also grow a triangle across its inside. */
   wallMask(b) {
-    let m = 0; const dirs = [[1, 0, 1], [0, 1, 2], [-1, 0, 4], [0, -1, 8]];
-    for (const [dx, dy, bit] of dirs) { const x = b.tx + dx, y = b.ty + dy; if (!this.inBounds(x, y)) continue; const n = this.bld[this.idx(x, y)]; if (n && !n.dead && n.def.wall && n.owner === b.owner) m |= bit; }
+    const own = (x, y) => { if (!this.inBounds(x, y)) return false; const n = this.bld[this.idx(x, y)]; return !!(n && !n.dead && n.def.wall && n.owner === b.owner); };
+    let m = 0; const x = b.tx, y = b.ty;
+    if (own(x + 1, y)) m |= 1; if (own(x, y + 1)) m |= 2; if (own(x - 1, y)) m |= 4; if (own(x, y - 1)) m |= 8;
+    for (const [dx, dy, bit] of [[1, -1, 16], [1, 1, 32], [-1, 1, 64], [-1, -1, 128]]) if (own(x + dx, y + dy) && !own(x + dx, y) && !own(x, y + dy)) m |= bit;
     return m;
   },
   /* Empty land: nothing at all on it. Used for placing buildings and resources. */

@@ -147,12 +147,17 @@ const Input = {
   tap(x, y) {
     if (Game.placing) { if (Game.placing.wall) { if (!Game.wallStart) { Game.beginWall(x, y); UI.hint('Tap the other end of the wall'); } else Game.placeWall(x, y); } else Game.placeAt(x, y, false); return; }
     if (Game.mode) { Game.commandAt(x, y, false, Game.mode); Game.mode = null; UI.refreshCommands(); return; }
-    // Own thing under the finger: select it. Otherwise, with units selected, it's a command.
+    // Your own thing under the finger: select it. The two exceptions are the ones a tap can only mean one way:
+    // villagers tapping an unfinished foundation help build it, and tapping a farm sets them working it.
+    // Garrisoning and repairing have their own buttons, so a tap on the Town Hall selects it instead of
+    // marching everyone inside by accident.
     const u = Renderer.pickUnit(x, y), b = u ? null : Renderer.pickBuilding(x, y);
     const own = (u && u.owner === Game.human) || (b && b.owner === Game.human);
     const haveUnits = Game.selection.some((s) => s.kind === 'unit');
+    const haveVill = Game.selection.some((s) => s.kind === 'unit' && s.type === 'villager');
     const haveBuilding = Game.selection.some((s) => s.kind === 'building');
-    if (own && !(haveUnits && b && b.owner === Game.human && (!b.built || b.hp < b.maxHp || b.def.farm || b.def.garrison))) { Game.clickSelect(x, y, false, false); return; }
+    const tapCommand = haveVill && b && b.owner === Game.human && (!b.built || b.def.farm);
+    if (own && !tapCommand) { Game.clickSelect(x, y, false, false); return; }
     if (haveUnits || haveBuilding) { Game.commandAt(x, y, false); return; }
     Game.clickSelect(x, y, false, false);
   },

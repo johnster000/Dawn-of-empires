@@ -98,8 +98,11 @@ table.stats td { padding: 6px; border-bottom: 1px solid rgba(90,74,48,.35); }
    middle drag and wheel that lands on them, so only the panels inside it take the pointer. */
 #bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; gap: 8px; padding: 0 8px calc(8px + var(--safe-bottom)); pointer-events: none; }
 #bottom > * { pointer-events: auto; }
-#selpanel { width: 250px; flex: 0 0 auto; background: var(--stone); border: 2px solid #3a3040; outline: 1px solid var(--border); outline-offset: -5px; border-radius: 4px; padding: 9px 11px; font-size: 13px; min-height: 96px; box-shadow: 0 0 0 1px #000, inset 0 0 26px rgba(0,0,0,.5); }
-.sel-head { display: flex; gap: 10px; align-items: center; }
+#selpanel { position: relative; width: 250px; flex: 0 0 auto; background: var(--stone); border: 2px solid #3a3040; outline: 1px solid var(--border); outline-offset: -5px; border-radius: 4px; padding: 9px 11px; font-size: 13px; min-height: 96px; box-shadow: 0 0 0 1px #000, inset 0 0 26px rgba(0,0,0,.5); }
+.sel-head { display: flex; gap: 10px; align-items: center; padding-right: 32px; }
+.sel-close { position: absolute; top: 5px; right: 5px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; color: var(--gold2); background: linear-gradient(180deg, #332a3a, #1a151f); border: 1px solid var(--border); outline: 1px solid #000; border-radius: 3px; box-shadow: 0 2px 0 #000; }
+.sel-close:active { transform: translateY(1px); box-shadow: 0 1px 0 #000; }
+.sel-multi { padding-right: 30px; }
 .sel-head canvas { flex: 0 0 auto; background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 3px; padding: 2px; }
 .sel-info { flex: 1; min-width: 0; }
 .sel-name { font-size: 15px; color: var(--gold2); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-shadow: 0 1px 0 #000; } .sel-owner { font-size: 12px; }
@@ -159,6 +162,7 @@ body.coarse #tooltip { display: none !important; }
   /* Phones: the interface is a solid dock along the bottom, the minimap tucks under the resource row. */
   #bottom { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 6px calc(6px + var(--safe-bottom)); background: rgba(14,11,18,.96); border-top: 1px solid var(--border); pointer-events: auto; }
   #selpanel { width: 100%; min-height: 0; padding: 6px 8px; order: 1; }
+  .sel-close { width: 34px; height: 34px; font-size: 16px; top: 4px; right: 4px; } #selpanel .sel-head { padding-right: 40px; }
   #selpanel .sel-head canvas { width: 34px !important; height: 34px !important; }
   #selpanel .sel-name { font-size: 14px; } .sel-owner { display: none; }
   #selpanel:not(.expanded) .sel-stats { display: none; }

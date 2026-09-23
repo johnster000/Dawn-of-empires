@@ -16,6 +16,7 @@ const U = {
   hex(c) { const n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; },
   rgb(r, g, b) { return '#' + [r, g, b].map((v) => Math.round(U.clamp(v, 0, 255)).toString(16).padStart(2, '0')).join(''); },
   shade(c, k) { const [r, g, b] = U.hex(c); return k >= 0 ? U.rgb(r + (255 - r) * k, g + (255 - g) * k, b + (255 - b) * k) : U.rgb(r * (1 + k), g * (1 + k), b * (1 + k)); },
+  lerpColor(a, b, t) { const p = U.hex(a), q = U.hex(b); return U.rgb(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t); },
   mix(a, b, t) { const A = U.hex(a), B = U.hex(b); return U.rgb(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t); },
   alpha(c, a) { const [r, g, b] = U.hex(c); return `rgba(${r},${g},${b},${a})`; },
 

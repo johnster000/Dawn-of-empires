@@ -222,7 +222,7 @@ const UI = {
           });
           el.appendChild(q);
         } else if (s.def.monument && s.built) el.appendChild(U.el('div', 'sel-activity', `Standing for ${U.time(s.monumentT)} of ${U.time(Game.settings.monumentTime)}`));
-        else if (s.owner === Game.human && (s.def.trains || s.def.techs)) el.appendChild(U.el('div', 'sel-activity muted', 'Right-click the map to set a rally point.'));
+        else if (s.owner === Game.human && (s.def.trains || s.def.techs)) el.appendChild(U.el('div', 'sel-activity muted', (document.body.classList.contains('coarse') ? 'Tap the map to set a rally point.' : 'Right-click the map to set a rally point.')));
       }
     } else {
       // group portraits by type
@@ -238,6 +238,7 @@ const UI = {
       const hp = sel.reduce((a, s) => a + s.hp, 0), mx = sel.reduce((a, s) => a + s.maxHp, 0);
       el.appendChild(U.el('div', 'sel-activity', `${sel.length} selected · ${Math.round((hp / mx) * 100)}% health`));
     }
+    this.addClose(el);
   },
   /* What is left in a patch of trees, a seam or a shoal. */
   showResource(r) {
@@ -265,7 +266,14 @@ const UI = {
     el.appendChild(stats);
     const pct = Math.round(U.clamp(f, 0, 1) * 100);
     el.appendChild(U.el('div', 'sel-activity', workers ? workers + (workers === 1 ? ' villager working it' : ' villagers working it') : pct < 100 ? 'Partly worked. Right-click it with villagers.' : 'Untouched. Right-click it with villagers.'));
+    this.addClose(el);
     this.els.commands.hidden = true; this.commands = [];
+  },
+  /* A clear way out of any selection, which a phone otherwise has no gesture for. */
+  addClose(el) {
+    const x = U.el('button', 'sel-close', '✕'); x.title = 'Deselect (Esc)'; x.setAttribute('aria-label', 'Deselect');
+    x.onclick = (e) => { e.stopPropagation(); Game.select([]); Sfx.play('ui'); };
+    el.appendChild(x);
   },
   stat(label, value, title) { const d = U.el('div', 'stat'); d.appendChild(U.el('span', 'label', label)); d.appendChild(U.el('span', 'value', String(value))); if (title) d.title = title; return d; },
   activity(u) {
@@ -302,6 +310,7 @@ const UI = {
         if (vill.length) cmds.push({ label: 'Build', glyph: '⚒', desc: 'Houses, farms, camps and workshops.', onClick: () => { Game.buildMenu = 'main'; this.refreshCommands(); } });
         if (vill.length) cmds.push({ label: 'Defences', glyph: '🛡', desc: 'Walls, gates, towers and keeps.', onClick: () => { Game.buildMenu = 'defence'; this.refreshCommands(); } });
         if (mil.length) cmds.push({ label: 'Attack move', glyph: '⚔', desc: 'Advance to a point, fighting anything met on the way.', active: Game.mode === 'attackmove', onClick: () => { Game.mode = Game.mode === 'attackmove' ? null : 'attackmove'; this.refreshCommands(); } });
+        if (units.some((u) => u.def.cls === 'villager' || u.def.cls === 'infantry' || u.def.cls === 'archer')) cmds.push({ label: 'Garrison', glyph: '⛫', desc: 'Pick your Town Hall, a tower or a keep to shelter inside it.', active: Game.mode === 'garrison', onClick: () => { Game.mode = Game.mode === 'garrison' ? null : 'garrison'; this.refreshCommands(); } });
         if (vill.length) cmds.push({ label: 'Repair', glyph: '🔧', desc: 'Pick one of your buildings to mend it.', active: Game.mode === 'repair', onClick: () => { Game.mode = Game.mode === 'repair' ? null : 'repair'; this.refreshCommands(); } });
         cmds.push({ label: 'Stop', glyph: '■', desc: 'Stop and stand still.', onClick: () => { for (const u of units) Sim.idle(u); Sfx.play('ack'); this.selDirty = true; } });
         cmds.push({ label: 'Move', glyph: '➤', desc: 'Move to a point without fighting. (Right-click does this too.)', active: Game.mode === 'move', onClick: () => { Game.mode = Game.mode === 'move' ? null : 'move'; this.refreshCommands(); } });
@@ -336,6 +345,7 @@ const UI = {
     else if (Game.mode === 'attackmove') this.hint('Click a destination to attack-move');
     else if (Game.mode === 'move') this.hint('Click a destination');
     else if (Game.mode === 'repair') this.hint('Click one of your buildings to repair it');
+    else if (Game.mode === 'garrison') this.hint('Click your Town Hall, a tower or a keep');
     else this.hint(null);
   },
   hotkey(k) {
