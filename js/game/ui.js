@@ -239,6 +239,7 @@ const UI = {
       el.appendChild(U.el('div', 'sel-activity', `${sel.length} selected · ${Math.round((hp / mx) * 100)}% health`));
     }
     this.addClose(el);
+    this.keepInfo(el);
   },
   /* What is left in a patch of trees, a seam or a shoal. */
   showResource(r) {
@@ -336,16 +337,30 @@ const UI = {
       if (c.icon) btn.appendChild(this.icon(...c.icon)); else btn.appendChild(U.el('span', 'glyph', c.glyph));
       btn.appendChild(U.el('span', 'lbl', c.label));
       if (i < GRID_KEYS.length) { c.key = GRID_KEYS[i]; btn.appendChild(U.el('span', 'key', c.key.toUpperCase())); }
-      btn.onclick = (e) => { e.stopPropagation(); if (c.disabled) { UI.toast(c.disabled); Sfx.play('error'); return; } Sfx.play('ui'); c.onClick(); this.cmdDirty = true; };
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (btn._held) { btn._held = false; return; } // a long press already showed the card
+        const touch = document.body.classList.contains('coarse');
+        if (c.disabled) { if (touch) this.showInfo(c); else UI.toast(c.disabled); Sfx.play('error'); return; }
+        Sfx.play('ui'); c.onClick(); this.cmdDirty = true;
+        // on touch there is no hover, so say what was just chosen: while placing, the card stays up until it's placed
+        if (touch && (c.cost || c.desc) && c.label !== 'Cancel') this.showInfo(c, !!Game.placing);
+      };
+      // press and hold a button on touch to read about it without doing anything
+      btn.addEventListener('touchstart', () => { clearTimeout(btn._lp); btn._lp = setTimeout(() => { btn._held = true; this.showInfo(c); Sfx.play('ui'); }, 420); }, { passive: true });
+      const cancelHold = () => clearTimeout(btn._lp);
+      btn.addEventListener('touchend', cancelHold); btn.addEventListener('touchmove', cancelHold, { passive: true }); btn.addEventListener('touchcancel', cancelHold);
+      btn.addEventListener('contextmenu', (e) => e.preventDefault());
       btn.onmouseenter = () => this.showTip(btn, c); btn.onmouseleave = () => this.hideTip();
       el.appendChild(btn); this.commands.push(c);
     });
-    if (Game.placing && Game.placing.wall) this.hint(Game.wallStart ? 'Drag to the other end, then release' : 'Click and drag to lay a run of wall · Right-click or Esc to finish');
-    else if (Game.placing) this.hint('Click to place · Shift-click to place several · Right-click or Esc to cancel');
-    else if (Game.mode === 'attackmove') this.hint('Click a destination to attack-move');
-    else if (Game.mode === 'move') this.hint('Click a destination');
-    else if (Game.mode === 'repair') this.hint('Click one of your buildings to repair it');
-    else if (Game.mode === 'garrison') this.hint('Click your Town Hall, a tower or a keep');
+    const touch = document.body.classList.contains('coarse'), tap = touch ? 'Tap' : 'Click';
+    if (Game.placing && Game.placing.wall) this.hint(touch ? (Game.wallStart ? 'Tap the other end of the wall' : 'Tap where the wall starts · Cancel to finish') : Game.wallStart ? 'Drag to the other end, then release' : 'Click and drag to lay a run of wall · Right-click or Esc to finish');
+    else if (Game.placing) this.hint(touch ? 'Tap the ground to place · Cancel to stop' : 'Click to place · Shift-click to place several · Right-click or Esc to cancel');
+    else if (Game.mode === 'attackmove') this.hint(tap + ' a destination to attack-move');
+    else if (Game.mode === 'move') this.hint(tap + ' a destination');
+    else if (Game.mode === 'repair') this.hint(tap + ' one of your buildings to repair it');
+    else if (Game.mode === 'garrison') this.hint(tap + ' your Town Hall, a tower or a keep');
     else this.hint(null);
   },
   hotkey(k) {
@@ -364,6 +379,25 @@ const UI = {
     const r = btn.getBoundingClientRect(); t.style.left = Math.max(8, Math.min(window.innerWidth - t.offsetWidth - 8, r.left + r.width / 2 - t.offsetWidth / 2)) + 'px'; t.style.top = (r.top - t.offsetHeight - 8) + 'px';
   },
   hideTip() { this.els.tooltip.hidden = true; },
+  /* Touch screens: the same details a tooltip gives, shown as a card over the selection panel instead of over
+     the map. It clears itself after a few seconds, when tapped, or (for a building being placed) once placed. */
+  showInfo(c, sticky) {
+    const t = U.el('div', 'cmd-info');
+    t.appendChild(U.el('div', 'tip-name', c.label));
+    if (c.cost) { const row = U.el('div', 'tip-cost'); for (const k in c.cost) { const s = U.el('span', 'cost' + ((Game.players[Game.human].res[k] || 0) < c.cost[k] ? ' short' : '')); s.appendChild(this.resIcon(k, 14)); s.appendChild(document.createTextNode(c.cost[k])); row.appendChild(s); } t.appendChild(row); }
+    if (c.desc) t.appendChild(U.el('div', 'tip-desc', c.desc));
+    if (c.disabled) t.appendChild(U.el('div', 'tip-why', c.disabled));
+    t.onclick = (e) => { e.stopPropagation(); this.clearInfo(); };
+    this.clearInfo(); this.info = { el: t, until: performance.now() + (c.disabled ? 4500 : 3500), sticky };
+    this.keepInfo(this.els.selpanel);
+  },
+  clearInfo() { if (this.info) { this.info.el.remove(); this.info = null; } },
+  keepInfo(el) {
+    const i = this.info; if (!i) return;
+    const alive = i.sticky ? !!Game.placing : performance.now() < i.until;
+    if (!alive || el.hidden) { this.clearInfo(); return; }
+    if (i.el.parentNode !== el) el.appendChild(i.el);
+  },
 
   /* ---- end screen ---- */
   showEnd(won, reason) {

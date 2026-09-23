@@ -144,6 +144,7 @@ body.coarse #tooltip { display: none !important; }
 .tip-name { color: var(--gold2); font-size: 13px; margin-bottom: 4px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; text-shadow: 0 1px 0 #000; }
 .tip-cost { display: flex; gap: 10px; margin: 3px 0 5px; } .tip-cost .cost { display: flex; align-items: center; gap: 3px; } .tip-cost .short { color: var(--red); }
 .tip-desc { color: var(--text); line-height: 1.35; } .tip-why { color: var(--red); margin-top: 4px; font-style: italic; }
+.cmd-info { position: absolute; left: -2px; right: -2px; bottom: -2px; min-height: calc(100% + 4px); z-index: 4; background: linear-gradient(180deg, #2c2433, #1b1620); border: 1px solid var(--gold); outline: 1px solid #000; border-radius: 4px; padding: 8px 12px; font-size: 12.5px; box-shadow: 0 -6px 18px rgba(0,0,0,.6); display: flex; flex-direction: column; justify-content: center; }
 #toast { position: absolute; left: 50%; bottom: calc(var(--safe-bottom) + 200px); transform: translateX(-50%) translateY(10px); background: linear-gradient(180deg, #2a2230, #15111a); border: 1px solid var(--gold); outline: 1px solid #000; color: var(--gold2); padding: 8px 18px; border-radius: 3px; font-size: 14px; font-weight: 700; letter-spacing: .05em; text-shadow: 0 1px 0 #000; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none !important; white-space: nowrap; }
 #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
