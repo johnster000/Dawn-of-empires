@@ -25,6 +25,7 @@ const UI = {
     $('btn-resume').onclick = () => this.togglePause();
     $('btn-pause-howto').onclick = () => { this.showHowTo(true); };
     $('btn-pause-sound').onclick = () => { Sfx.setEnabled(!Sfx.enabled); this.syncSound(); };
+    $('btn-pause-perf').onclick = () => { Perf.toggle(); this.syncGfx(); };
     $('btn-pause-gfx').onclick = () => { const order = ['auto', 'sharp', 'fast']; Renderer.setQuality(order[(order.indexOf(Renderer.quality) + 1) % order.length]); this.syncGfx(); };
     $('btn-restart').onclick = () => { Game.newGame(Game.settings); };
     $('btn-quit').onclick = () => { Game.quit(); };
@@ -64,7 +65,7 @@ const UI = {
     const $ = this.$; $('modal-title').textContent = 'Import a save'; $('modal-sub').textContent = 'Paste the text from Export. It replaces the saved game on this device and starts straight away.';
     $('modal-text').value = ''; $('btn-modal-import').hidden = false; $('btn-modal-copy').hidden = true; this.showScreen('modal'); $('modal-text').focus();
   },
-  syncGfx() { this.$('btn-pause-gfx').textContent = 'Graphics: ' + { auto: 'Auto', sharp: 'Sharp', fast: 'Fast' }[Renderer.quality]; },
+  syncGfx() { this.$('btn-pause-gfx').textContent = 'Graphics: ' + { auto: 'Auto', sharp: 'Sharp', fast: 'Fast' }[Renderer.quality]; this.$('btn-pause-perf').textContent = 'Performance readout: ' + (Perf.on ? 'on' : 'off'); },
   syncSound() { const t = Sfx.enabled ? 'Sounds on' : 'Sounds off'; this.$('btn-sound').textContent = t; this.$('btn-pause-sound').textContent = t; },
   syncSpeed() { const sp = Game.settings.speed; this.els.speed.textContent = '»' + sp + '×'; this.$('btn-pause-speed').textContent = 'Speed: ' + ({ 1: 'Normal', 1.5: 'Fast', 2: 'Very fast', 3: 'Fastest' }[sp] || sp + '×'); },
   showScreen(id) {
@@ -117,6 +118,11 @@ const UI = {
 
   /* ---- icons ---- */
   resIcon(kind, size) {
+    const key = 'res:' + kind + ':' + size;
+    if (!this.iconCache.has(key)) this.iconCache.set(key, this.toImageSource(this.drawResIcon(kind, size)));
+    return this.makeImg(this.iconCache.get(key));
+  },
+  drawResIcon(kind, size) {
     const cv = document.createElement('canvas'); cv.width = cv.height = size * 2; cv.style.width = cv.style.height = size + 'px'; cv.className = 'ricon';
     const g = cv.getContext('2d'); g.scale(2, 2); const c = size / 2;
     if (kind === 'food') { g.fillStyle = '#d0603a'; g.beginPath(); g.arc(c, c + 1, c * 0.62, 0, 7); g.fill(); g.fillStyle = '#5a8a3a'; g.beginPath(); g.ellipse(c + 2, c - 5, 3.5, 1.8, -0.6, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.35)'; g.beginPath(); g.arc(c - 2.5, c - 1.5, 2, 0, 7); g.fill(); }
@@ -125,12 +131,15 @@ const UI = {
     else { g.fillStyle = '#e0b43c'; g.beginPath(); g.moveTo(c - 8, c + 5); g.lineTo(c - 5, c - 2); g.lineTo(c + 5, c - 2); g.lineTo(c + 8, c + 5); g.closePath(); g.fill(); g.fillStyle = '#f5d878'; g.fillRect(c - 4, c - 1, 8, 2); }
     return cv;
   },
+  /* Icons are drawn once and handed out as images. Handing out a fresh canvas each time the panels refreshed made
+     several new GPU surfaces a second, which slower tablets felt on every tap. */
   icon(kind, type, owner) {
     const p = Game.players[owner]; const key = kind + ':' + type + ':' + owner + ':' + (p ? p.age : 0);
-    if (!this.iconCache.has(key)) this.iconCache.set(key, kind === 'tech' ? this.techIcon(type) : Renderer.icon(kind, type, owner, 44));
-    return this.iconCache.get(key).cloneNode(true) && this.copyCanvas(this.iconCache.get(key));
+    if (!this.iconCache.has(key)) this.iconCache.set(key, this.toImageSource(kind === 'tech' ? this.techIcon(type) : Renderer.icon(kind, type, owner, 44)));
+    return this.makeImg(this.iconCache.get(key));
   },
-  copyCanvas(src) { const cv = document.createElement('canvas'); cv.width = src.width; cv.height = src.height; cv.style.width = src.style.width; cv.style.height = src.style.height; cv.getContext('2d').drawImage(src, 0, 0); return cv; },
+  toImageSource(cv) { return { src: cv.toDataURL(), w: cv.style.width, h: cv.style.height, cls: cv.className }; },
+  makeImg(s) { const img = new Image(); img.src = s.src; img.style.width = s.w; img.style.height = s.h; img.className = 'ico' + (s.cls ? ' ' + s.cls : ''); img.draggable = false; img.alt = ''; return img; },
   techIcon(id) {
     const t = TECHS[id], cv = document.createElement('canvas'); cv.width = cv.height = 88; cv.style.width = cv.style.height = '44px';
     const g = cv.getContext('2d'); g.scale(2, 2);
@@ -183,10 +192,14 @@ const UI = {
   refreshSelection() {
     const el = this.els.selpanel; const sel = Game.selection.filter((s) => !s.dead);
     if (Game.selectedRes && Game.selectedRes.removed) Game.selectedRes = null;
-    if (!sel.length && Game.selectedRes) { this.showResource(Game.selectedRes); return; }
-    if (!sel.length) { el.innerHTML = ''; el.hidden = true; this.els.commands.hidden = true; return; }
+    if (!sel.length && Game.selectedRes) { this.selSig = ''; this.showResource(Game.selectedRes); return; }
+    if (!sel.length) { this.selSig = ''; el.innerHTML = ''; el.hidden = true; this.els.commands.hidden = true; return; }
     el.hidden = false;
     const p = Game.players[sel[0].owner];
+    // rebuilt only when something it shows has changed, not four times a second regardless
+    const sig = this.selSignature(sel);
+    if (sig === this.selSig && el.childElementCount) { this.keepInfo(el); return; }
+    this.selSig = sig;
     if (sel.length === 1) {
       const s = sel[0]; el.innerHTML = '';
       const head = U.el('div', 'sel-head');
@@ -279,6 +292,12 @@ const UI = {
     this.els.commands.hidden = true; this.commands = [];
   },
   /* A clear way out of any selection, which a phone otherwise has no gesture for. */
+  selSignature(sel) {
+    const s = sel[0], p = Game.players[s.owner];
+    if (sel.length > 1) return 'm|' + sel.map((x) => x.id + ':' + x.type).join(',') + '|' + Math.round(sel.reduce((a, x) => a + x.hp, 0) / sel.reduce((a, x) => a + x.maxHp, 0) * 100);
+    const q = s.queue ? s.queue.map((x) => x.kind + x.id).join(',') + '@' + Math.floor(s.qt * 4) : '';
+    return ['s', s.id, Math.ceil(s.hp), s.maxHp, s.built, s.built ? '' : Math.floor(s.progress * 100), q, this.activity && s.kind === 'unit' ? this.activity(s) : '', s.carry ? Math.floor(s.carry.amt) + s.carry.kind : '', s.garrison ? s.garrison.length : '', s.cargo ? s.cargo.length : '', s.rally ? 1 : 0, s.bell ? 1 : 0, s.atk, s.armor, s.range, p.techs.size, p.age, s.ageVisual, s.monumentT ? Math.floor(s.monumentT) : '', s.worker && !s.worker.dead ? 1 : 0].join('|');
+  },
   addClose(el) {
     const x = U.el('button', 'sel-close', '✕'); x.title = 'Deselect (Esc)'; x.setAttribute('aria-label', 'Deselect');
     x.onclick = (e) => { e.stopPropagation(); Game.select([]); Sfx.play('ui'); };

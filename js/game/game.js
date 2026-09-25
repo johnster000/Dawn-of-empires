@@ -70,11 +70,14 @@ const Game = {
         Input.poll(dt);
         this.acc += dt * this.settings.speed;
         let guard = 0;
+        const t0 = performance.now();
         while (this.acc >= STEP && guard++ < 12) { this.tick(STEP); this.acc -= STEP; }
         if (guard >= 12) this.acc = 0;
+        Perf.add('tick', performance.now() - t0);
       }
-      Renderer.draw(this.paused ? 0 : dt);
-      UI.update(dt);
+      const t1 = performance.now(); Renderer.draw(this.paused ? 0 : dt); const t2 = performance.now();
+      UI.update(dt); const t3 = performance.now();
+      Perf.add('draw', t2 - t1); Perf.add('ui', t3 - t2); Perf.frame(ts);
     }
     requestAnimationFrame((t) => this.frame(t));
   },

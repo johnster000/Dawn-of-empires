@@ -10,6 +10,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 #app { position: fixed; inset: 0; overflow: hidden; }
+#perf { position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--safe-top, 0px) + 52px); z-index: 50; white-space: pre; font: 11px/1.35 ui-monospace, Menlo, monospace; color: #e8f0c8; background: rgba(0,0,0,.72); border: 1px solid #3a3040; border-radius: 3px; padding: 4px 7px; pointer-events: none; }
 canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: var(--bg); }
 [hidden] { display: none !important; }
 button { font-family: inherit; cursor: pointer; color: var(--text); }
@@ -103,7 +104,7 @@ table.stats td { padding: 6px; border-bottom: 1px solid rgba(90,74,48,.35); }
 .sel-close { position: absolute; top: 5px; right: 5px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; color: var(--gold2); background: linear-gradient(180deg, #332a3a, #1a151f); border: 1px solid var(--border); outline: 1px solid #000; border-radius: 3px; box-shadow: 0 2px 0 #000; }
 .sel-close:active { transform: translateY(1px); box-shadow: 0 1px 0 #000; }
 .sel-multi { padding-right: 30px; }
-.sel-head canvas { flex: 0 0 auto; background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 3px; padding: 2px; }
+.sel-head :is(canvas, img) { flex: 0 0 auto; background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 3px; padding: 2px; }
 .sel-info { flex: 1; min-width: 0; }
 .sel-name { font-size: 15px; color: var(--gold2); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-shadow: 0 1px 0 #000; } .sel-owner { font-size: 12px; }
 .hpbar { position: relative; height: 12px; background: #000; border: 1px solid var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
@@ -125,11 +126,11 @@ table.stats td { padding: 6px; border-bottom: 1px solid rgba(90,74,48,.35); }
 .cmd { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; height: 78px; background: linear-gradient(180deg, #332a3a, #1a151f); border: 1px solid var(--border); outline: 1px solid #000; border-radius: 3px; padding: 4px 3px 3px; font-size: 11px; font-weight: 700; line-height: 1.1; text-align: center; text-shadow: 0 1px 0 #000; box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 2px 0 #000; }
 .cmd:hover { border-color: var(--gold2); }
 .cmd:active { transform: translateY(1px); box-shadow: 0 1px 0 #000; }
-.cmd canvas { display: block; }
+.cmd :is(canvas, img) { display: block; }
 .cmd .glyph { font-size: 26px; line-height: 44px; height: 44px; color: var(--gold2); }
 .cmd .lbl { color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmd .key { position: absolute; top: 2px; left: 4px; font-size: 10px; color: var(--muted); }
-.cmd.disabled { opacity: .55; } .cmd.disabled canvas, .cmd.disabled .glyph { filter: grayscale(.8); }
+.cmd.disabled { opacity: .55; } .cmd.disabled :is(canvas, img), .cmd.disabled .glyph { filter: grayscale(.8); }
 .cmd.locked::after { content: '🔒'; position: absolute; top: 2px; right: 4px; font-size: 11px; opacity: .8; }
 .cmd.active { border-color: var(--gold2); box-shadow: 0 0 0 1px var(--gold2), 0 0 12px rgba(232,196,106,.35); }
 .cmd.danger .glyph { color: var(--red); }
@@ -152,7 +153,7 @@ body.coarse #tooltip { display: none !important; }
 @media (max-width: 760px) {
   #topbar { font-size: 13px; gap: 4px; padding: 4px 6px; flex-wrap: nowrap; } .res { min-width: 0; flex: 1 1 0; padding: 2px 6px 2px 4px; } #age { display: none; } #clock { display: none; } #speed { display: none; } #pop { flex: 0 0 auto; }
   #selpanel { width: 190px; font-size: 12px; min-height: 80px; } .sel-stats { grid-template-columns: 1fr; }
-  #commands { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; } .cmd { height: 64px; font-size: 10px; } .cmd canvas { width: 34px !important; height: 34px !important; } .cmd .glyph { font-size: 20px; height: 34px; line-height: 34px; }
+  #commands { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; } .cmd { height: 64px; font-size: 10px; } .cmd :is(canvas, img) { width: 34px !important; height: 34px !important; } .cmd .glyph { font-size: 20px; height: 34px; line-height: 34px; }
   #minimap { width: 128px; height: 64px; } #right { gap: 4px; } #btn-idle { font-size: 11px; padding: 5px 6px; }
   #log { max-width: 60vw; } .msg { font-size: 12px; }
   #hint { bottom: calc(var(--safe-bottom) + 150px); font-size: 12px; } #toast { bottom: calc(var(--safe-bottom) + 170px); }
@@ -164,13 +165,13 @@ body.coarse #tooltip { display: none !important; }
   #bottom { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 6px calc(6px + var(--safe-bottom)); background: rgba(14,11,18,.96); border-top: 1px solid var(--border); pointer-events: auto; }
   #selpanel { width: 100%; min-height: 0; padding: 6px 8px; order: 1; }
   .sel-close { width: 34px; height: 34px; font-size: 16px; top: 4px; right: 4px; } #selpanel .sel-head { padding-right: 40px; }
-  #selpanel .sel-head canvas { width: 34px !important; height: 34px !important; }
+  #selpanel .sel-head :is(canvas, img) { width: 34px !important; height: 34px !important; }
   #selpanel .sel-name { font-size: 14px; } .sel-owner { display: none; }
   #selpanel:not(.expanded) .sel-stats { display: none; }
   .sel-stats { grid-template-columns: 1fr 1fr; font-size: 11px; margin-top: 4px; }
   .sel-activity { margin-top: 3px; font-size: 12px; }
   #commands { order: 2; width: 100%; max-width: none; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-  .cmd { height: 58px; font-size: 9.5px; padding: 3px 2px 2px; } .cmd canvas { width: 30px !important; height: 30px !important; } .cmd .glyph { font-size: 18px; height: 30px; line-height: 30px; } .cmd .key { display: none; }
+  .cmd { height: 58px; font-size: 9.5px; padding: 3px 2px 2px; } .cmd :is(canvas, img) { width: 30px !important; height: 30px !important; } .cmd .glyph { font-size: 18px; height: 30px; line-height: 30px; } .cmd .key { display: none; }
   #right { position: fixed; right: 6px; top: calc(var(--safe-top) + 46px); margin: 0; gap: 3px; order: 0; z-index: 11; }
   #minimap { width: 118px; height: 59px; }
   #btn-idle, #btn-army { font-size: 10px; padding: 4px 5px; }

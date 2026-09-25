@@ -7,6 +7,7 @@ class SpriteCache {
   map(key) { return this.maps[key[0] === 'u' && key[1] === '|' ? 'u' : key[0] === 'b' && key[1] === '|' ? 'b' : 'r']; }
   get(key) { const m = this.map(key), sp = m.get(key); if (sp) { m.delete(key); m.set(key, sp); } return sp; }
   set(key, sp) {
+    Renderer.spritesMade = (Renderer.spritesMade || 0) + 1;
     const m = this.map(key); m.set(key, sp);
     const cap = this.caps[key[0] === 'u' && key[1] === '|' ? 'u' : key[0] === 'b' && key[1] === '|' ? 'b' : 'r'];
     if (m.size > cap) { const it = m.keys(); for (let i = Math.ceil(cap * 0.1); i > 0; i--) m.delete(it.next().value); }
@@ -286,7 +287,7 @@ const Renderer = {
       const k = this.spriteK(zq), W = Math.ceil(128 * k), H = Math.ceil(150 * k), ax = W / 2, ay = H - 20 * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
-      this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
+      this.g = cv.getContext('2d', { willReadFrequently: true }); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const fake = { kind: r.kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: (vq + 0.5) / 8, amount: (lvl + 0.5) / 3, max: 1 };
       this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
@@ -308,7 +309,7 @@ const Renderer = {
     const cv = document.createElement('canvas'); cv.width = cv.height = size * 2; cv.style.width = cv.style.height = size + 'px';
     const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
     const k = kind === 'tree' ? size / 58 : size / 32;
-    this.g = cv.getContext('2d'); this.dpr = 2; this.cam = { x: 0, y: 0, zoom: k }; this.W = size; this.H = size * 1.75;
+    this.g = cv.getContext('2d', { willReadFrequently: true }); this.dpr = 2; this.cam = { x: 0, y: 0, zoom: k }; this.W = size; this.H = size * 1.75;
     this.drawResourceVector({ kind: kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: 0.5, amount: 1, max: 1 });
     this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
     return cv;
@@ -425,7 +426,7 @@ const Renderer = {
       const k = this.spriteK(zq), hgt = this.height(b) + 70, W = Math.ceil((s * 64 + 72) * k), H = Math.ceil((s * 32 + hgt + 40) * k), ax = W / 2 - 8 * k, ay = hgt * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
-      this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
+      this.g = cv.getContext('2d', { willReadFrequently: true }); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const fake = { tx: 0, ty: 0, size: s, x: s / 2, y: s / 2, def: b.def, type: b.type, built: true, worker: grown ? { dead: false } : null, owner: b.owner, ageVisual: b.ageVisual, mask };
       this.at(0, 0, 0); this.footShadow(fake); this.mat = age; this.flags = [];
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
@@ -464,8 +465,9 @@ const Renderer = {
     }
     g.putImageData(img, 0, 0);
   },
-  /* The old-school pass reads pixels back, which leaves a canvas in slow CPU memory and makes every later
-     draw of it re-upload. Stamping a copy that is never read keeps sprites on the GPU. */
+  /* Sprites are drawn on CPU-side canvases (willReadFrequently), so the old-school pass reads their pixels without
+     stalling the GPU, which on Android tablets cost many milliseconds per sprite. The finished sprite is copied once
+     to an ordinary canvas that is never read, so stamping it stays on the GPU. */
   freeze(cv) { const out = document.createElement('canvas'); out.width = cv.width; out.height = cv.height; out.getContext('2d').drawImage(cv, 0, 0); return out; },
   stamp(sp, sx, sy, glow) {
     const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
@@ -760,7 +762,7 @@ const Renderer = {
       const k = this.spriteK(zq), W = Math.ceil((u.def.naval ? 128 : 72) * k), H = Math.ceil((u.def.naval ? 96 : 76) * k), ax = W / 2, ay = H - (u.def.naval ? 20 : 8) * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
-      this.g = cv.getContext('2d'); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
+      this.g = cv.getContext('2d', { willReadFrequently: true }); this.dpr = 1; this.cam = { x: 0, y: 0, zoom: k }; this.W = 2 * ax; this.H = 2 * ay;
       const walk = [0, 1, 0, -1][frame];
       const sw = swing >= 3 ? [1, 0.55, -0.3, 0.15][swing - 3] : swing === 2 ? 1 : swing === 1 ? -0.3 : 0.1;
       this.at(0, 0, 0);
@@ -1083,7 +1085,7 @@ const Renderer = {
   icon(kind, type, owner, size) {
     const cv = document.createElement('canvas'); cv.width = size * 2; cv.height = size * 2; cv.style.width = cv.style.height = size + 'px';
     const saveG = this.g, saveCam = { ...this.cam }, saveW = this.W, saveH = this.H, saveDpr = this.dpr;
-    this.g = cv.getContext('2d'); this.dpr = 2; this.W = size; this.H = size;
+    this.g = cv.getContext('2d', { willReadFrequently: true }); this.dpr = 2; this.W = size; this.H = size;
     const p = Game.players[owner] || Game.players[0];
     if (kind === 'unit') {
       const def = UNITS[type]; this.cam = { x: 0, y: 0, zoom: def.cls === 'siege' ? 1.1 : 1.15 }; this.W = size; this.H = size * 1.55;

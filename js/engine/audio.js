@@ -25,12 +25,16 @@ const Sfx = {
     gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(vol, t0 + (attack || 0.01)); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(gn); gn.connect(this.master); o.start(t0); o.stop(t0 + dur + 0.02);
   },
+  /* One second of white noise, made once and reused: building a fresh buffer of random samples for every chop and
+     arrow was a steady cost on phones and tablets. The fade that used to be baked in is now a gain ramp. */
+  noiseBuf: null,
   noise(t0, dur, vol, lp) {
-    const c = this.ctx, n = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const src = c.createBufferSource(); src.buffer = buf; const gn = c.createGain(); gn.gain.value = vol;
+    const c = this.ctx;
+    if (!this.noiseBuf) { const n = c.sampleRate, buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; this.noiseBuf = buf; }
+    const src = c.createBufferSource(); src.buffer = this.noiseBuf; const gn = c.createGain();
+    gn.gain.setValueAtTime(vol, t0); gn.gain.linearRampToValueAtTime(0.0001, t0 + dur);
     const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp || 1200;
-    src.connect(f); f.connect(gn); gn.connect(this.master); src.start(t0);
+    src.connect(f); f.connect(gn); gn.connect(this.master); src.start(t0, Math.random() * 0.2, dur);
   },
   synth: {
     ui(t, g) { this.tone(t, 660, 0.06, 'triangle', 0.12 * g); },
@@ -51,3 +55,24 @@ const Sfx = {
     coin(t, g) { this.tone(t, 1300, 0.08, 'sine', 0.06 * g); },
   },
 };
+
+/* A small readout of where each frame's time goes, switched on from the pause menu. Updated twice a second. */
+const Perf = {
+  on: false, el: null, sum: { tick: 0, draw: 0, ui: 0 }, frames: 0, since: 0, sprites: 0, lastTs: 0, worst: 0,
+  init() { try { this.on = localStorage.getItem('anvil-perf') === '1'; } catch (e) {} },
+  toggle() { this.on = !this.on; try { localStorage.setItem('anvil-perf', this.on ? '1' : '0'); } catch (e) {} if (this.el) this.el.hidden = !this.on; },
+  add(k, ms) { if (this.on) this.sum[k] += ms; },
+  frame(ts) {
+    if (!this.on) return;
+    if (!this.el) { this.el = document.createElement('div'); this.el.id = 'perf'; document.body.appendChild(this.el); }
+    this.el.hidden = false;
+    if (this.lastTs) this.worst = Math.max(this.worst, ts - this.lastTs);
+    this.lastTs = ts; this.frames++;
+    if (!this.since) { this.since = ts; return; }
+    const span = ts - this.since; if (span < 500) return;
+    const f = this.frames, s = this.sum, R = typeof Renderer !== 'undefined' ? Renderer : null;
+    this.el.textContent = `${Math.round(f * 1000 / span)} fps · worst ${Math.round(this.worst)} ms\nlogic ${(s.tick / f).toFixed(1)} · draw ${(s.draw / f).toFixed(1)} · ui ${(s.ui / f).toFixed(1)} ms\nnew sprites ${Math.round(((R ? R.spritesMade : 0) - this.sprites) * 1000 / span)}/s · ${R ? R.W + '×' + R.H + ' @' + R.dpr.toFixed(2) : ''}`;
+    this.sprites = R ? R.spritesMade : 0; this.since = ts; this.frames = 0; this.worst = 0; s.tick = s.draw = s.ui = 0;
+  },
+};
+Perf.init();
