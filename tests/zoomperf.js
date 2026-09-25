@@ -21,6 +21,7 @@ const { launch } = require('./lib');
     return { units: Game.units.length, buildings: Game.buildings.length, sprites: Renderer.sprites.size, firstFrameMs: firsts, stepAvgMs: +(total / n).toFixed(2), stepWorstMs: +worst.toFixed(1), animAvgMs: +(anim / 60).toFixed(2) };
   });
   console.log('ZOOM', JSON.stringify(r));
-  console.log('ERRORS', H.errors.length ? H.errors.join('\n') : 'none');
+  const errs = H.errors.filter((e) => !/willReadFrequently/.test(e)); // our own per-frame readback, not the game
+  console.log('ERRORS', errs.length ? errs.join('\n') : 'none');
   await H.close();
 })().catch((e) => { console.error('FAILED', e); process.exit(1); });

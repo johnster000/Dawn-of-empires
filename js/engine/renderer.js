@@ -25,13 +25,20 @@ const Renderer = {
 
   init(canvas, mini) {
     this.canvas = canvas; this.g = canvas.getContext('2d');
+    try { const q = localStorage.getItem('anvil-gfx'); if (q === 'sharp' || q === 'fast' || q === 'auto') this.quality = q; } catch (e) {}
     this.mini = mini; this.mg = mini.getContext('2d');
     this.resize();
     window.addEventListener('resize', () => this.resize());
   },
+  /* Graphics quality: 'sharp' draws at the screen's full pixel density (up to 2x); 'fast' at one pixel per CSS pixel;
+     'auto' keeps the canvas under about 2.4 million pixels, which a big tablet at 2x would otherwise quadruple. Sprites
+     are drawn chunky on purpose, so a little under native density costs almost nothing to the eye. */
+  quality: 'auto', PIXEL_BUDGET: 2.4e6,
+  setQuality(q) { this.quality = q; try { localStorage.setItem('anvil-gfx', q); } catch (e) {} this.resize(); },
   resize() {
-    this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.W = this.canvas.clientWidth; this.H = this.canvas.clientHeight;
+    const native = Math.min(2, window.devicePixelRatio || 1);
+    this.dpr = this.quality === 'fast' ? 1 : this.quality === 'sharp' ? native : Math.max(1, Math.min(native, Math.sqrt(this.PIXEL_BUDGET / Math.max(1, this.W * this.H))));
     this.canvas.width = Math.round(this.W * this.dpr); this.canvas.height = Math.round(this.H * this.dpr);
   },
   /* Precompute per-tile colours and paint the whole ground into one texture (TP px per tile).
@@ -60,6 +67,7 @@ const Renderer = {
     }
     // ground texture. Colours are computed per texel from smooth fields (shade, dirt, a bilinear land/water
     // mask with noisy edges) so coastlines and dirt fade instead of following tile diamonds.
+    this.terrainVer++;
     const tex = this.terrainTex = document.createElement('canvas'); tex.width = w * TP; tex.height = h * TP;
     const tg = tex.getContext('2d');
     const img = tg.createImageData(w * TP, h * TP), d = img.data;
@@ -160,7 +168,6 @@ const Renderer = {
     this.time += dt;
     const g = this.g, dpr = this.dpr;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.fillStyle = '#0b0a10'; g.fillRect(0, 0, this.W, this.H);
     // visible tile range from the four screen corners
     const c0 = this.toWorld(0, 0), c1 = this.toWorld(this.W, 0), c2 = this.toWorld(0, this.H), c3 = this.toWorld(this.W, this.H);
     const x0 = Math.max(0, Math.floor(Math.min(c0[0], c1[0], c2[0], c3[0])) - 1), x1 = Math.min(World.w - 1, Math.ceil(Math.max(c0[0], c1[0], c2[0], c3[0])) + 1);
@@ -206,21 +213,35 @@ const Renderer = {
     const sx = Math.max(0, x0 - 1), sy = Math.max(0, y0 - 1), ex = Math.min(World.w, x1 + 2), ey = Math.min(World.h, y1 + 2);
     g.drawImage(img, sx * ppt, sy * ppt, (ex - sx) * ppt, (ey - sy) * ppt, sx, sy, ex - sx, ey - sy);
   },
+  /* The ground (terrain and film grain) only changes when the camera moves, so it is painted into a screen-sized
+     buffer and that buffer is copied each frame. Repainting it at full resolution every frame was most of the cost
+     of a frame on a big tablet screen. */
+  groundCv: null, groundKey: '', terrainVer: 0,
   drawGround(x0, y0, x1, y1) {
-    const g = this.g, s = this.cam.zoom, T = World.T, w = World.w, dpr = this.dpr;
-    this.drawMapImage(this.terrainTex, this.TP, x0, y0, x1, y1, true);
-    // film grain over the whole map area, scrolling with the world
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const c = [this.toScreen(0, 0, 0), this.toScreen(w, 0, 0), this.toScreen(w, World.h, 0), this.toScreen(0, World.h, 0)];
-    g.save(); g.beginPath(); g.moveTo(c[0][0], c[0][1]); for (const q of c.slice(1)) g.lineTo(q[0], q[1]); g.closePath(); g.clip();
-    const ox = ((c[0][0] % 128) + 128) % 128, oy = ((c[0][1] % 128) + 128) % 128;
-    g.translate(ox, oy); g.fillStyle = this.grainPat; g.fillRect(-ox - 128, -oy - 128, this.W + 256, this.H + 256);
-    g.restore();
+    const s = this.cam.zoom, T = World.T, w = World.w, dpr = this.dpr, cw = this.canvas.width, ch = this.canvas.height;
+    const key = [this.cam.x, this.cam.y, s, cw, ch, dpr, this.terrainVer, x0, y0, x1, y1].join(',');
+    if (!this.groundCv || this.groundCv.width !== cw || this.groundCv.height !== ch) { this.groundCv = document.createElement('canvas'); this.groundCv.width = cw; this.groundCv.height = ch; this.groundKey = ''; }
+    if (key !== this.groundKey) {
+      const main = this.g, gc = this.g = this.groundCv.getContext('2d');
+      gc.setTransform(1, 0, 0, 1, 0, 0); gc.fillStyle = '#0b0a10'; gc.fillRect(0, 0, cw, ch);
+      this.drawMapImage(this.terrainTex, this.TP, x0, y0, x1, y1, true);
+      // film grain over the whole map area, scrolling with the world
+      gc.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const c = [this.toScreen(0, 0, 0), this.toScreen(w, 0, 0), this.toScreen(w, World.h, 0), this.toScreen(0, World.h, 0)];
+      gc.save(); gc.beginPath(); gc.moveTo(c[0][0], c[0][1]); for (const q of c.slice(1)) gc.lineTo(q[0], q[1]); gc.closePath(); gc.clip();
+      const ox = ((c[0][0] % 128) + 128) % 128, oy = ((c[0][1] % 128) + 128) % 128;
+      gc.translate(ox, oy); gc.fillStyle = this.grainPat; gc.fillRect(-ox - 128, -oy - 128, this.W + 256, this.H + 256);
+      gc.restore();
+      this.g = main; this.groundKey = key;
+    }
+    const g = this.g; g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(this.groundCv, 0, 0); g.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (s < 0.7) return;
     // moving water: light dashes that drift, brighter and denser in the shallows, foam at the shoreline
     const hw = 32 * s, hh = 16 * s, reveal = Game.settings.reveal, vis = World.visible, tiles = World.tiles;
     const cols = this.rippleCols || (this.rippleCols = [U.alpha(T.waterLight, 0.35), U.alpha(T.waterLight, 0.55), U.alpha('#ffffff', 0.35)]);
     g.lineCap = 'butt'; g.lineWidth = Math.max(1, Math.round(s));
+    // one path per colour, stroked once each, rather than a stroke call per ripple
+    const paths = [new Path2D(), new Path2D(), new Path2D()];
     let n = 0;
     for (let y = y0; y <= y1 && n < 700; y++) for (let x = x0; x <= x1; x++) {
       const i = y * w + x;
@@ -228,10 +249,11 @@ const Renderer = {
       const [sx, sy] = this.toScreen(x + 0.5, y + 0.5, 0);
       const hsh = ((x * 73856093) ^ (y * 19349663)) >>> 0;
       const drift = ((this.time * 6 + (hsh % 64)) % 64) - 32;
-      const k = ((hsh >>> 8) % 3);
-      g.strokeStyle = cols[k]; g.beginPath(); g.moveTo(sx + (drift - 14) * s * 0.7, sy + ((hsh >>> 4) % 9 - 4) * s); g.lineTo(sx + (drift - 14 + 6 + k * 3) * s * 0.7, sy + ((hsh >>> 4) % 9 - 4) * s); g.stroke(); n++;
-      if (World.isShallow(x, y) && Math.sin(this.time * 1.5 + hsh % 7) > 0.2) { g.strokeStyle = cols[2]; g.beginPath(); g.moveTo(sx - 10 * s, sy + 6 * s); g.lineTo(sx + 4 * s, sy + 6 * s); g.stroke(); }
+      const k = ((hsh >>> 8) % 3), py = sy + ((hsh >>> 4) % 9 - 4) * s;
+      paths[k].moveTo(sx + (drift - 14) * s * 0.7, py); paths[k].lineTo(sx + (drift - 14 + 6 + k * 3) * s * 0.7, py); n++;
+      if (World.isShallow(x, y) && Math.sin(this.time * 1.5 + hsh % 7) > 0.2) { paths[2].moveTo(sx - 10 * s, sy + 6 * s); paths[2].lineTo(sx + 4 * s, sy + 6 * s); }
     }
+    for (let k = 0; k < 3; k++) { g.strokeStyle = cols[k]; g.stroke(paths[k]); }
   },
 
   /* Set a transform so that (0,0) is the world point and 1 unit = 1 zoom-1 pixel. */

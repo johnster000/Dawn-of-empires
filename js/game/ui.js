@@ -25,6 +25,7 @@ const UI = {
     $('btn-resume').onclick = () => this.togglePause();
     $('btn-pause-howto').onclick = () => { this.showHowTo(true); };
     $('btn-pause-sound').onclick = () => { Sfx.setEnabled(!Sfx.enabled); this.syncSound(); };
+    $('btn-pause-gfx').onclick = () => { const order = ['auto', 'sharp', 'fast']; Renderer.setQuality(order[(order.indexOf(Renderer.quality) + 1) % order.length]); this.syncGfx(); };
     $('btn-restart').onclick = () => { Game.newGame(Game.settings); };
     $('btn-quit').onclick = () => { Game.quit(); };
     $('btn-end-again').onclick = () => { Game.newGame(Game.settings); };
@@ -48,6 +49,7 @@ const UI = {
     const coarse = () => document.body.classList.toggle('coarse', window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 560);
     coarse(); window.addEventListener('resize', coarse);
     document.addEventListener('touchstart', () => this.hideTip(), { passive: true });
+    this.syncGfx();
     try { if (localStorage.getItem('anvil-sound') === '0') Sfx.enabled = false; } catch (e) {}
     this.syncSound();
     this.showScreen('title');
@@ -62,6 +64,7 @@ const UI = {
     const $ = this.$; $('modal-title').textContent = 'Import a save'; $('modal-sub').textContent = 'Paste the text from Export. It replaces the saved game on this device and starts straight away.';
     $('modal-text').value = ''; $('btn-modal-import').hidden = false; $('btn-modal-copy').hidden = true; this.showScreen('modal'); $('modal-text').focus();
   },
+  syncGfx() { this.$('btn-pause-gfx').textContent = 'Graphics: ' + { auto: 'Auto', sharp: 'Sharp', fast: 'Fast' }[Renderer.quality]; },
   syncSound() { const t = Sfx.enabled ? 'Sounds on' : 'Sounds off'; this.$('btn-sound').textContent = t; this.$('btn-pause-sound').textContent = t; },
   syncSpeed() { const sp = Game.settings.speed; this.els.speed.textContent = '»' + sp + '×'; this.$('btn-pause-speed').textContent = 'Speed: ' + ({ 1: 'Normal', 1.5: 'Fast', 2: 'Very fast', 3: 'Fastest' }[sp] || sp + '×'); },
   showScreen(id) {
@@ -294,9 +297,9 @@ const UI = {
 
   /* ---- command grid ---- */
   refreshCommands() {
-    const el = this.els.commands; el.innerHTML = ''; this.commands = [];
+    const el = this.els.commands;
     const sel = Game.selection.filter((s) => !s.dead && s.owner === Game.human);
-    if (!sel.length) { el.hidden = true; this.hint(Game.selection.length ? '' : null); return; }
+    if (!sel.length) { el.innerHTML = ''; this.commands = []; this.cmdSig = ''; el.hidden = true; this.hint(Game.selection.length ? '' : null); return; }
     el.hidden = false;
     const p = Game.players[Game.human];
     const units = sel.filter((s) => s.kind === 'unit'), blds = sel.filter((s) => s.kind === 'building');
@@ -340,6 +343,11 @@ const UI = {
       }
       cmds.push({ label: 'Demolish', glyph: '🕱', desc: b.built ? 'Tear this building down.' : 'Abandon the site. Unspent materials are returned.', danger: true, onClick: () => Game.deleteSelected() });
     }
+    // The grid is rebuilt only when what it shows has changed. Rebuilding it twice a second regardless cost layout on
+    // slower tablets, and a tap that began on a button replaced mid-press never arrived.
+    const sig = sel.map((s) => s.id).join(',') + '|' + (Game.buildMenu || '') + '|' + (Game.mode || '') + '|' + !!Game.placing + '|' + cmds.map((c) => c.label + (c.disabled ? '!' + c.disabled : '') + (c.locked ? 'L' : '') + (c.active ? 'A' : '') + (c.danger ? 'D' : '') + (c.icon ? c.icon.join(':') : '')).join(';');
+    if (sig === this.cmdSig && el.childElementCount) { this.commands = cmds; cmds.forEach((c, i) => { if (i < GRID_KEYS.length) c.key = GRID_KEYS[i]; }); this.updateHint(); return; }
+    this.cmdSig = sig; el.innerHTML = ''; this.commands = [];
     cmds.forEach((c, i) => {
       const btn = U.el('button', 'cmd' + (c.disabled ? ' disabled' : '') + (c.locked ? ' locked' : '') + (c.active ? ' active' : '') + (c.danger ? ' danger' : ''));
       if (c.icon) btn.appendChild(this.icon(...c.icon)); else btn.appendChild(U.el('span', 'glyph', c.glyph));
@@ -362,6 +370,9 @@ const UI = {
       btn.onmouseenter = () => this.showTip(btn, c); btn.onmouseleave = () => this.hideTip();
       el.appendChild(btn); this.commands.push(c);
     });
+    this.updateHint();
+  },
+  updateHint() {
     const touch = document.body.classList.contains('coarse'), tap = touch ? 'Tap' : 'Click';
     if (Game.placing && Game.placing.wall) this.hint(touch ? (Game.wallStart ? 'Tap the other end of the wall' : 'Tap where the wall starts · Cancel to finish') : Game.wallStart ? 'Drag to the other end, then release' : 'Click and drag to lay a run of wall · Right-click or Esc to finish');
     else if (Game.placing) this.hint(touch ? 'Tap the ground to place · Cancel to stop' : 'Click to place · Shift-click to place several · Right-click or Esc to cancel');
