@@ -381,7 +381,7 @@ const Renderer = {
       const fake = { kind: r.kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: (vq + 0.5) / 8, amount: (lvl + 0.5) / 3, max: 1 };
       this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = this.pack(cv, ax, ay, k); this.sprites.set(key, sp);
+      sp = this.pack(cv, ax, ay, k, null, r.kind === 'tree'); this.sprites.set(key, sp);
     }
     return sp;
   },
@@ -523,7 +523,7 @@ const Renderer = {
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
       this.mat = null; const flags = this.flags; this.flags = null; this.oldSchool(cv, 9, b.def.shape === 'wall'); // wall pieces butt together, so no outline at their ends
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = this.pack(cv, ax, ay, k, flags); this.sprites.set(key, sp);
+      sp = this.pack(cv, ax, ay, k, flags, !b.def.passable); this.sprites.set(key, sp);
     }
     return sp;
   },
@@ -574,7 +574,18 @@ const Renderer = {
      where a small canvas may be kept in software on Android and uploaded again every time it is drawn. */
   bitmapify(sp) { if (typeof createImageBitmap !== 'function') return sp; createImageBitmap(sp.cv).then((b) => { sp.cv = b; }).catch(() => {}); return sp; },
   // a finished sprite: its pixels, their size, and the anchor point that sits on the ground
-  pack(cv, ax, ay, k, flags) { return this.bitmapify({ cv: this.freeze(cv), w: cv.width, h: cv.height, ax, ay, k, flags }); },
+  pack(cv, ax, ay, k, flags, solid) {
+    const sp = this.bitmapify({ cv: this.freeze(cv), w: cv.width, h: cv.height, ax, ay, k, flags });
+    /* Things that can stand in front of a unit also keep a copy without their see-through shadow: the piece redrawn
+       over the unit must not lay the shadow a second time on the one already in the background. */
+    if (solid) {
+      const img = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height), d = img.data;
+      for (let o = 3; o < d.length; o += 4) if (d[o] < 255) d[o] = 0;
+      const out = document.createElement('canvas'); out.width = cv.width; out.height = cv.height; out.getContext('2d').putImageData(img, 0, 0);
+      sp.solid = this.bitmapify({ cv: out });
+    }
+    return sp;
+  },
   stamp(sp, sx, sy, glow) {
     this.stamps++;
     const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
@@ -597,7 +608,7 @@ const Renderer = {
     const v0 = Math.max(0, Math.floor((c[1] * dpr - dy) / fy)), v1 = Math.min(sp.h, Math.ceil(((c[1] + c[3]) * dpr - dy) / fy));
     if (u1 <= u0 || v1 <= v0) return;
     g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = sc < 0.99;
-    g.drawImage(sp.cv, u0, v0, u1 - u0, v1 - v0, dx + u0 * fx, dy + v0 * fy, (u1 - u0) * fx, (v1 - v0) * fy);
+    g.drawImage((sp.solid || sp).cv, u0, v0, u1 - u0, v1 - v0, dx + u0 * fx, dy + v0 * fy, (u1 - u0) * fx, (v1 - v0) * fy);
   },
   zq(z) { const Z = this.ZOOMS; let i = 0; for (let k = 0; k < Z.length; k++) if (Math.abs(Z[k] - z) < Math.abs(Z[i] - z)) i = k; return Z[i]; },
   footShadow(b) {
