@@ -10,7 +10,7 @@ class SpriteCache {
     Renderer.spritesMade = (Renderer.spritesMade || 0) + 1;
     const m = this.map(key); m.set(key, sp);
     const cap = this.caps[key[0] === 'u' && key[1] === '|' ? 'u' : key[0] === 'b' && key[1] === '|' ? 'b' : 'r'];
-    if (m.size > cap) { const it = m.keys(); for (let i = Math.ceil(cap * 0.1); i > 0; i--) { const k = it.next().value, old = m.get(k); if (old && old.cv && old.cv.close) old.cv.close(); m.delete(k); } }
+    if (m.size > cap) { const it = m.keys(); for (let i = Math.ceil(cap * 0.1); i > 0; i--) { const k = it.next().value, old = m.get(k); m.delete(k); } }
   }
   get size() { let n = 0; for (const k in this.maps) n += this.maps[k].size; return n; }
   clear() { for (const k in this.maps) this.maps[k].clear(); }
@@ -178,7 +178,7 @@ const Renderer = {
 
   /* ---- frame ---- */
   draw(dt) {
-    this.time += dt;
+    this.time += dt; this.madeThisFrame = 0;
     const g = this.g, dpr = this.dpr;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     // visible tile range from the four screen corners
@@ -206,7 +206,7 @@ const Renderer = {
     const cw = this.canvas.width, ch = this.canvas.height;
     const skey = [this.cam.x, this.cam.y, this.cam.zoom, cw, ch, dpr, this.terrainVer, x0, y0, x1, y1, h, this.debugOff].join(',');
     if (!this.staticCv || this.staticCv.width !== cw || this.staticCv.height !== ch) { this.staticCv = document.createElement('canvas'); this.staticCv.width = cw; this.staticCv.height = ch; this.staticKey = ''; }
-    if (skey !== this.staticKey) { this.paintStatic(stat, x0, y0, x1, y1, noSprites); this.staticKey = skey; this.staticPaints = (this.staticPaints || 0) + 1; }
+    if (skey !== this.staticKey) { this.paintStatic(stat, x0, y0, x1, y1, noSprites); this.staticKey = skey; this.staticPaints++; }
     g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(this.staticCv, 0, 0); g.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.debugOff !== 2 && this.debugOff !== 4) this.drawRipples(x0, y0, x1, y1);
     // what moves
@@ -235,7 +235,7 @@ const Renderer = {
       else if (it.k === 'fx') this.drawEffect(it.o);
       else if (it.k === 'ghost') this.drawGhost(it.o);
       else if (it.k === 'hl') this.drawResource(it.o, 'hl');
-      else if (it.k === 'occ') { const c = it.clip, s2 = it.o; g.save(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.beginPath(); g.rect(c[0], c[1], c[2], c[3]); g.clip(); this.stamp(s2.sp, s2.sx, s2.sy); g.restore(); }
+      else if (it.k === 'occ') this.stampPart(it.o.sp, it.o.sx, it.o.sy, it.clip);
     }
     // your own people show through whatever hides them, as a faint silhouette
     for (const u of Game.units) if (!u.dead && u.owner === Game.human && u.spr && u.sx != null && inView(u.x, u.y) && this.occluded(u)) { g.globalAlpha = 0.5; this.stamp(u.spr, u.sx, u.sy); g.globalAlpha = 1; }
@@ -251,7 +251,7 @@ const Renderer = {
     for (const [inset, col] of [[0.5, '#000'], [1.5, '#000'], [2.5, '#3a3040'], [3.5, '#000']]) { g.strokeStyle = col; g.strokeRect(inset, inset, this.W - inset * 2, this.H - inset * 2); }
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = 0.4; this.drawMinimap(); }
   },
-  staticCv: null, staticKey: '', occGrid: null,
+  staticCv: null, staticKey: '', occGrid: null, stamps: 0, staticPaints: 0, madeThisFrame: 0,
   paintStatic(stat, x0, y0, x1, y1, noSprites) {
     const main = this.g, sg = this.g = this.staticCv.getContext('2d'), dpr = this.dpr, cw = this.staticCv.width, ch = this.staticCv.height;
     if (this.debugOff === 2 || this.debugOff === 4) { sg.setTransform(1, 0, 0, 1, 0, 0); sg.fillStyle = '#0b0a10'; sg.fillRect(0, 0, cw, ch); sg.setTransform(dpr, 0, 0, dpr, 0, 0); }
@@ -265,7 +265,7 @@ const Renderer = {
       if (!noSprites) this.stamp(sp, sx, sy);
       if (!it.occ) continue;
       it.sp = sp; it.sx = sx; it.sy = sy;
-      const l = sx - sp.ax * z, t = sy - sp.ay * z, r = l + sp.cv.width * z, b = t + sp.cv.height * z; it.rect = [l, t, r, b];
+      const l = sx - sp.ax * z, t = sy - sp.ay * z, r = l + sp.w * z, b = t + sp.h * z; it.rect = [l, t, r, b];
       for (let gx = Math.floor(l / C); gx <= Math.floor(r / C); gx++) for (let gy = Math.floor(t / C); gy <= Math.floor(b / C); gy++) { const k = gx * 4096 + gy; let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(it); }
     }
     this.g = main;
@@ -381,7 +381,7 @@ const Renderer = {
       const fake = { kind: r.kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: (vq + 0.5) / 8, amount: (lvl + 0.5) / 3, max: 1 };
       this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k }); this.sprites.set(key, sp);
+      sp = this.pack(cv, ax, ay, k); this.sprites.set(key, sp);
     }
     return sp;
   },
@@ -501,11 +501,10 @@ const Renderer = {
     const sp = this.bldSprite(b), s = b.size;
     if (mode !== 'live') { const [sx, sy] = this.toScreen(b.tx, b.ty, 0); this.stamp(sp, sx, sy); if (mode === 'static') return; }
     // live parts
-    this.at(b.tx, b.ty, 0);
     // each shape says where its poles stand while it is drawn, so the cloth waves from the roof it belongs to
-    const col = p.color.main, sh = b.def.shape;
-    for (const f of sp.flags || []) this.flag(this.P(f[0], f[1], f[2]), col);
-    if (sh === 'smithy') this.smithySmoke();
+    const col = p.color.main, sh = b.def.shape, z = this.cam.zoom;
+    if (sp.flags && sp.flags.length) { const [ox, oy] = this.toScreen(b.tx, b.ty, 0); for (const f of sp.flags) { const at = this.P(f[0], f[1], f[2]); this.stamp(this.flagSprite(col, this.time * 4 + at[0]), ox + at[0] * z, oy + at[1] * z); } }
+    if (sh === 'smithy') { this.at(b.tx, b.ty, 0); this.smithySmoke(); }
   },
   bldSprite(b) {
     const p = Game.players[b.owner], age = AGES[b.ageVisual] || AGES[0];
@@ -524,7 +523,21 @@ const Renderer = {
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
       this.mat = null; const flags = this.flags; this.flags = null; this.oldSchool(cv, 9, b.def.shape === 'wall'); // wall pieces butt together, so no outline at their ends
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k, flags }); this.sprites.set(key, sp);
+      sp = this.pack(cv, ax, ay, k, flags); this.sprites.set(key, sp);
+    }
+    return sp;
+  },
+  /* A waving flag is one of eight cached frames, stamped like any sprite instead of drawn as shapes every frame. */
+  flagSprite(color, phase) {
+    const q = ((Math.floor((phase / (Math.PI * 2)) * 8) % 8) + 8) % 8, key = 'f|' + color + '|' + q;
+    let sp = this.sprites.get(key);
+    if (!sp) {
+      const W = 18, H = 24, ax = 4, ay = 20, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const g = cv.getContext('2d', { willReadFrequently: true }), wv = Math.sin((q / 8) * Math.PI * 2) * 1.5;
+      g.translate(ax, ay); g.strokeStyle = '#3a2a1a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -16); g.stroke();
+      g.fillStyle = color; g.beginPath(); g.moveTo(0, -16); g.lineTo(10, -13 + wv); g.lineTo(0, -9); g.closePath(); g.fill();
+      this.oldSchool(cv, 6, true);
+      sp = this.pack(cv, ax, ay, 1); this.sprites.set(key, sp);
     }
     return sp;
   },
@@ -560,12 +573,31 @@ const Renderer = {
   /* Finished sprites are swapped for ImageBitmaps once the browser has made them: an immutable image the GPU keeps,
      where a small canvas may be kept in software on Android and uploaded again every time it is drawn. */
   bitmapify(sp) { if (typeof createImageBitmap !== 'function') return sp; createImageBitmap(sp.cv).then((b) => { sp.cv = b; }).catch(() => {}); return sp; },
+  // a finished sprite: its pixels, their size, and the anchor point that sits on the ground
+  pack(cv, ax, ay, k, flags) { return this.bitmapify({ cv: this.freeze(cv), w: cv.width, h: cv.height, ax, ay, k, flags }); },
   stamp(sp, sx, sy, glow) {
+    this.stamps++;
     const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
     g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = sc < 0.99;
     if (glow) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = glow; }
-    g.drawImage(sp.cv, Math.round(sx * dpr - sp.ax * sc), Math.round(sy * dpr - sp.ay * sc), Math.round(sp.cv.width * sc), Math.round(sp.cv.height * sc));
+    const dx = Math.round(sx * dpr - sp.ax * sc), dy = Math.round(sy * dpr - sp.ay * sc), dw = Math.round(sp.w * sc), dh = Math.round(sp.h * sc);
+    g.drawImage(sp.cv, dx, dy, dw, dh);
     if (glow) { g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; }
+  },
+  /* Just the part of a sprite inside a screen rectangle (CSS px): the piece of a tree or wall redrawn over someone
+     behind it. Cutting the source image is a plain copy, where clipping the canvas made the graphics chip build a
+     mask for every one. */
+  stampPart(sp, sx, sy, c) {
+    this.stamps++;
+    const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
+    const dx = Math.round(sx * dpr - sp.ax * sc), dy = Math.round(sy * dpr - sp.ay * sc), dw = Math.round(sp.w * sc), dh = Math.round(sp.h * sc);
+    const fx = dw / sp.w, fy = dh / sp.h;
+    // whole texels only, so the redrawn piece lines up exactly with the copy already in the background
+    const u0 = Math.max(0, Math.floor((c[0] * dpr - dx) / fx)), u1 = Math.min(sp.w, Math.ceil(((c[0] + c[2]) * dpr - dx) / fx));
+    const v0 = Math.max(0, Math.floor((c[1] * dpr - dy) / fy)), v1 = Math.min(sp.h, Math.ceil(((c[1] + c[3]) * dpr - dy) / fy));
+    if (u1 <= u0 || v1 <= v0) return;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = sc < 0.99;
+    g.drawImage(sp.cv, u0, v0, u1 - u0, v1 - v0, dx + u0 * fx, dy + v0 * fy, (u1 - u0) * fx, (v1 - v0) * fy);
   },
   zq(z) { const Z = this.ZOOMS; let i = 0; for (let k = 0; k < Z.length; k++) if (Math.abs(Z[k] - z) < Math.abs(Z[i] - z)) i = k; return Z[i]; },
   footShadow(b) {
@@ -849,7 +881,11 @@ const Renderer = {
     const carry = u.carry.amt > 0 ? u.carry.kind : '';
     const key = 'u|' + u.type + '|' + u.owner + '|' + p.age + '|' + flip + '|' + frame + '|' + swing + '|' + carry + '|' + (u.id % 4) + '|' + pose.tool + (u.def.naval ? '|' + (u.moving ? 1 : 0) + (u.cargo && u.cargo.length ? 'c' : '') : '');
     let sp = this.sprites.get(key);
+    // a few new pictures a frame at most: a crowd changing pose all at once keeps its last look for a frame or two
+    // rather than stalling the frame while every one is painted
+    if (!sp && u.spr && this.madeThisFrame >= 2) sp = u.spr;
     if (!sp) {
+      this.madeThisFrame++;
       const k = this.spriteK(zq), W = Math.ceil((u.def.naval ? 128 : 72) * k), H = Math.ceil((u.def.naval ? 96 : 76) * k), ax = W / 2, ay = H - (u.def.naval ? 20 : 8) * k;
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const saveG = this.g, saveCam = this.cam, saveDpr = this.dpr, saveW = this.W, saveH = this.H;
@@ -860,7 +896,7 @@ const Renderer = {
       this.drawUnitVector(u, p, flip ? -1 : 1, walk, sw, pose.tool, swing >= 3);
       this.oldSchool(cv, 8);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k }); this.sprites.set(key, sp);
+      sp = this.pack(cv, ax, ay, k); this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(u.x, u.y, 0);
     this.stamp(sp, sx, sy); u.spr = sp;
@@ -1094,8 +1130,9 @@ const Renderer = {
       g.globalAlpha = 1;
     } else if (e.kind === 'chips') {
       this.at(e.x, e.y, 0); const t = e.t / e.dur; g.fillStyle = e.color; g.globalAlpha = 1 - t * t;
-      if (e.splash) { g.strokeStyle = e.color; g.lineWidth = 1.2; g.beginPath(); g.ellipse(0, 0, 4 + t * 12, 2 + t * 6, 0, 0, 7); g.stroke(); for (let k = 0; k < 4; k++) { const a = e.seed + k * 1.6; g.fillRect(Math.cos(a) * 5 * (1 + t), -6 - Math.sin(t * Math.PI) * 10 + k, 1.5, 3); } }
-      else for (let k = 0; k < 6; k++) { const a = e.seed + k * 1.05, vx = Math.cos(a) * (6 + (k % 3) * 4), vz = 10 + (k % 2) * 8; const x = vx * t, z = vz * t - 24 * t * t; g.fillRect(x - 1, -14 - z, e.spark && k % 2 ? 1.2 : 2.2, e.spark && k % 2 ? 1.2 : 1.6); }
+      // all the bits in one shape: one draw instead of one per chip
+      if (e.splash) { g.strokeStyle = e.color; g.lineWidth = 1.2; g.beginPath(); g.ellipse(0, 0, 4 + t * 12, 2 + t * 6, 0, 0, 7); g.stroke(); g.beginPath(); for (let k = 0; k < 4; k++) { const a = e.seed + k * 1.6; g.rect(Math.cos(a) * 5 * (1 + t), -6 - Math.sin(t * Math.PI) * 10 + k, 1.5, 3); } g.fill(); }
+      else { g.beginPath(); for (let k = 0; k < 6; k++) { const a = e.seed + k * 1.05, vx = Math.cos(a) * (6 + (k % 3) * 4), vz = 10 + (k % 2) * 8; const x = vx * t, z = vz * t - 24 * t * t; g.rect(x - 1, -14 - z, e.spark && k % 2 ? 1.2 : 2.2, e.spark && k % 2 ? 1.2 : 1.6); } g.fill(); }
       g.globalAlpha = 1;
     } else if (e.kind === 'text') {
       const [sx, sy] = this.toScreen(e.x, e.y, 30); const t = e.t / e.dur; g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); g.globalAlpha = 1 - t; g.fillStyle = e.color || '#e8c46a'; g.font = `bold ${13 * this.cam.zoom}px Palatino, Georgia, serif`; g.textAlign = 'center'; g.fillText(e.text, sx, sy - t * 30); g.globalAlpha = 1;

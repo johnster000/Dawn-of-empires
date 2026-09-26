@@ -58,7 +58,7 @@ const Sfx = {
 
 /* A small readout of where each frame's time goes, switched on from the pause menu. Updated twice a second. */
 const Perf = {
-  on: false, el: null, sum: { tick: 0, draw: 0, ui: 0 }, frames: 0, since: 0, sprites: 0, lastTs: 0, worst: 0,
+  on: false, el: null, sum: { tick: 0, draw: 0, ui: 0 }, frames: 0, since: 0, sprites: 0, stamps: 0, paints: 0, lastTs: 0, worst: 0,
   init() { try { this.on = localStorage.getItem('anvil-perf') === '1'; } catch (e) {} },
   toggle() { this.on = !this.on; try { localStorage.setItem('anvil-perf', this.on ? '1' : '0'); } catch (e) {} if (this.el) this.el.hidden = !this.on; },
   add(k, ms) { if (this.on) this.sum[k] += ms; },
@@ -72,8 +72,8 @@ const Perf = {
     const span = ts - this.since; if (span < 500) return;
     const f = this.frames, s = this.sum, R = typeof Renderer !== 'undefined' ? Renderer : null;
     const layers = ['all layers', 'no fog', 'no ground', 'no sprites', 'nothing drawn'][R ? R.debugOff : 0];
-    this.el.textContent = `${Math.round(f * 1000 / span)} fps · worst ${Math.round(this.worst)} ms\nlogic ${(s.tick / f).toFixed(1)} · draw ${(s.draw / f).toFixed(1)} · ui ${(s.ui / f).toFixed(1)} ms\nnew sprites ${Math.round(((R ? R.spritesMade : 0) - this.sprites) * 1000 / span)}/s · ${R ? R.W + '×' + R.H + ' @' + R.dpr.toFixed(2) : ''}\n${layers} · tap here to test`;
-    this.sprites = R ? R.spritesMade : 0; this.since = ts; this.frames = 0; this.worst = 0; s.tick = s.draw = s.ui = 0;
+    this.el.textContent = `${Math.round(f * 1000 / span)} fps · worst ${Math.round(this.worst)} ms\nlogic ${(s.tick / f).toFixed(1)} · draw ${(s.draw / f).toFixed(1)} · ui ${(s.ui / f).toFixed(1)} ms\nnew sprites ${Math.round(((R ? R.spritesMade : 0) - this.sprites) * 1000 / span)}/s · images ${R ? Math.round((R.stamps - this.stamps) / f) : 0}/frame · repaints ${R ? ((R.staticPaints - this.paints) * 1000 / span).toFixed(1) : 0}/s\n${R ? R.W + '×' + R.H + ' @' + R.dpr.toFixed(2) : ''} · ${layers} · tap here to test`;
+    this.sprites = R ? R.spritesMade : 0; if (R) { this.stamps = R.stamps; this.paints = R.staticPaints; } this.since = ts; this.frames = 0; this.worst = 0; s.tick = s.draw = s.ui = 0;
   },
 };
 Perf.init();
