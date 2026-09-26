@@ -64,14 +64,15 @@ const Perf = {
   add(k, ms) { if (this.on) this.sum[k] += ms; },
   frame(ts) {
     if (!this.on) return;
-    if (!this.el) { this.el = document.createElement('div'); this.el.id = 'perf'; document.body.appendChild(this.el); }
+    if (!this.el) { this.el = document.createElement('div'); this.el.id = 'perf'; document.body.appendChild(this.el); this.el.onclick = () => { Renderer.debugOff = (Renderer.debugOff + 1) % 5; }; }
     this.el.hidden = false;
     if (this.lastTs) this.worst = Math.max(this.worst, ts - this.lastTs);
     this.lastTs = ts; this.frames++;
     if (!this.since) { this.since = ts; return; }
     const span = ts - this.since; if (span < 500) return;
     const f = this.frames, s = this.sum, R = typeof Renderer !== 'undefined' ? Renderer : null;
-    this.el.textContent = `${Math.round(f * 1000 / span)} fps · worst ${Math.round(this.worst)} ms\nlogic ${(s.tick / f).toFixed(1)} · draw ${(s.draw / f).toFixed(1)} · ui ${(s.ui / f).toFixed(1)} ms\nnew sprites ${Math.round(((R ? R.spritesMade : 0) - this.sprites) * 1000 / span)}/s · ${R ? R.W + '×' + R.H + ' @' + R.dpr.toFixed(2) : ''}`;
+    const layers = ['all layers', 'no fog', 'no ground', 'no sprites', 'nothing drawn'][R ? R.debugOff : 0];
+    this.el.textContent = `${Math.round(f * 1000 / span)} fps · worst ${Math.round(this.worst)} ms\nlogic ${(s.tick / f).toFixed(1)} · draw ${(s.draw / f).toFixed(1)} · ui ${(s.ui / f).toFixed(1)} ms\nnew sprites ${Math.round(((R ? R.spritesMade : 0) - this.sprites) * 1000 / span)}/s · ${R ? R.W + '×' + R.H + ' @' + R.dpr.toFixed(2) : ''}\n${layers} · tap here to test`;
     this.sprites = R ? R.spritesMade : 0; this.since = ts; this.frames = 0; this.worst = 0; s.tick = s.draw = s.ui = 0;
   },
 };

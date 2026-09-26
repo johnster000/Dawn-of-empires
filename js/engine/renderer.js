@@ -10,7 +10,7 @@ class SpriteCache {
     Renderer.spritesMade = (Renderer.spritesMade || 0) + 1;
     const m = this.map(key); m.set(key, sp);
     const cap = this.caps[key[0] === 'u' && key[1] === '|' ? 'u' : key[0] === 'b' && key[1] === '|' ? 'b' : 'r'];
-    if (m.size > cap) { const it = m.keys(); for (let i = Math.ceil(cap * 0.1); i > 0; i--) m.delete(it.next().value); }
+    if (m.size > cap) { const it = m.keys(); for (let i = Math.ceil(cap * 0.1); i > 0; i--) { const k = it.next().value, old = m.get(k); if (old && old.cv && old.cv.close) old.cv.close(); m.delete(k); } }
   }
   get size() { let n = 0; for (const k in this.maps) n += this.maps[k].size; return n; }
   clear() { for (const k in this.maps) this.maps[k].clear(); }
@@ -30,11 +30,13 @@ const Renderer = {
     this.mini = mini; this.mg = mini.getContext('2d');
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    const mark = () => { this.dirty = true; };
+    for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'touchstart', 'touchmove', 'touchend', 'wheel', 'keydown']) window.addEventListener(ev, mark, { passive: true, capture: true });
   },
   /* Graphics quality: 'sharp' draws at the screen's full pixel density (up to 2x); 'fast' at one pixel per CSS pixel;
      'auto' keeps the canvas under about 2.4 million pixels, which a big tablet at 2x would otherwise quadruple. Sprites
      are drawn chunky on purpose, so a little under native density costs almost nothing to the eye. */
-  quality: 'auto', PIXEL_BUDGET: 2.4e6,
+  quality: 'auto', PIXEL_BUDGET: 2.4e6, debugOff: 0, dirty: true,
   setQuality(q) { this.quality = q; try { localStorage.setItem('anvil-gfx', q); } catch (e) {} this.resize(); },
   resize() {
     this.W = this.canvas.clientWidth; this.H = this.canvas.clientHeight;
@@ -131,7 +133,17 @@ const Renderer = {
     this.fogDirty = true; this.miniT = 0; this.sprites = newSprites();
   },
   /* The fog texture: one pixel per tile, drawn with the same transform as the ground, bilinear-smoothed. */
+  /* Fog is cached like the ground: it is re-rendered into a screen-sized buffer only when the camera moves or the fog
+     itself changes (a few times a second), and simply copied the rest of the time. */
+  fogCv: null, fogKey: '', fogVer: 0,
+  drawFog(x0, y0, x1, y1) {
+    const cw = this.canvas.width, ch = this.canvas.height, key = [this.cam.x, this.cam.y, this.cam.zoom, cw, ch, this.dpr, this.fogVer, x0, y0, x1, y1].join(',');
+    if (!this.fogCv || this.fogCv.width !== cw || this.fogCv.height !== ch) { this.fogCv = document.createElement('canvas'); this.fogCv.width = cw; this.fogCv.height = ch; this.fogKey = ''; }
+    if (key !== this.fogKey) { const main = this.g, fc = this.g = this.fogCv.getContext('2d'); fc.setTransform(1, 0, 0, 1, 0, 0); fc.clearRect(0, 0, cw, ch); this.drawMapImage(this.fogTex, 1, x0, y0, x1, y1); this.g = main; this.fogKey = key; }
+    const g = this.g; g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(this.fogCv, 0, 0);
+  },
   updateFogTex() {
+    this.fogVer++;
     const w = World.w, h = World.h, fg = this.fogTex.getContext('2d');
     const img = fg.createImageData(w, h), d = img.data;
     const reveal = Game.settings.reveal;
@@ -174,7 +186,7 @@ const Renderer = {
     const x0 = Math.max(0, Math.floor(Math.min(c0[0], c1[0], c2[0], c3[0])) - 1), x1 = Math.min(World.w - 1, Math.ceil(Math.max(c0[0], c1[0], c2[0], c3[0])) + 1);
     const y0 = Math.max(0, Math.floor(Math.min(c0[1], c1[1], c2[1], c3[1])) - 1), y1 = Math.min(World.h - 1, Math.ceil(Math.max(c0[1], c1[1], c2[1], c3[1])) + 3);
     this.view = { x0, y0, x1, y1 };
-    this.drawGround(x0, y0, x1, y1);
+    if (this.debugOff === 2 || this.debugOff === 4) { g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#0b0a10'; g.fillRect(0, 0, this.canvas.width, this.canvas.height); g.setTransform(dpr, 0, 0, dpr, 0, 0); } else this.drawGround(x0, y0, x1, y1);
     // collect drawables
     const list = [];
     const inView = (x, y) => x >= x0 - 2 && x <= x1 + 2 && y >= y0 - 2 && y <= y1 + 2;
@@ -188,7 +200,7 @@ const Renderer = {
     list.sort((a, b) => a.d - b.d || (a.k === 'fx' ? -1 : 0));
     // selection rings first so they sit under feet
     for (const u of Game.selection) if (u.kind === 'unit' && !u.dead) this.drawRing(u);
-    for (const it of list) {
+    if (this.debugOff !== 3 && this.debugOff !== 4) for (const it of list) {
       if (it.k === 'res') this.drawResource(it.o);
       else if (it.k === 'bld') this.drawBuilding(it.o);
       else if (it.k === 'unit') this.drawUnit(it.o);
@@ -198,12 +210,15 @@ const Renderer = {
     // your own people show through whatever hides them, as a faint silhouette
     for (const u of Game.units) if (!u.dead && u.owner === Game.human && u.spr && u.sx != null && inView(u.x, u.y) && this.occluded(u)) { g.globalAlpha = 0.5; this.stamp(u.spr, u.sx, u.sy); g.globalAlpha = 1; }
     // fog of war over everything in the world, then interface overlays on top
-    if (!reveal) { if (this.fogDirty) this.updateFogTex(); this.drawMapImage(this.fogTex, 1, x0, y0, x1, y1); }
+    if (!reveal && this.debugOff !== 1 && this.debugOff !== 4) { if (this.fogDirty) this.updateFogTex(); this.drawFog(x0, y0, x1, y1); }
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     for (const b of Game.buildings) if (!b.dead && inView(b.x, b.y) && (Game.selection.includes(b) || b.hp < b.maxHp || !b.built) && (reveal || exp[World.idx(b.tx, b.ty)])) this.drawBuildingBar(b);
     for (const u of Game.units) if (!u.dead && u.sx != null && inView(u.x, u.y) && (Game.selection.includes(u) || (u.hp < u.maxHp && Game.time - (u.lastHit || -99) < 6))) this.drawUnitBar(u);
     for (const b of Game.selection) if (b.kind === 'building' && b.rally && b.owner === Game.human) this.drawRally(b);
     if (this.selBox) { const bx = this.selBox; g.strokeStyle = 'rgba(232,196,106,0.9)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(bx.x0 + 0.5, bx.y0 + 0.5, bx.x1 - bx.x0, bx.y1 - bx.y0); g.setLineDash([]); g.fillStyle = 'rgba(232,196,106,0.08)'; g.fillRect(bx.x0, bx.y0, bx.x1 - bx.x0, bx.y1 - bx.y0); }
+    // the carved frame round the edge of the screen
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.lineWidth = 1;
+    for (const [inset, col] of [[0.5, '#000'], [1.5, '#000'], [2.5, '#3a3040'], [3.5, '#000']]) { g.strokeStyle = col; g.strokeRect(inset, inset, this.W - inset * 2, this.H - inset * 2); }
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = 0.4; this.drawMinimap(); }
   },
   /* Draw a per-tile image (`ppt` pixels per tile) so that tile (x, y) lands on its diamond. */
@@ -291,7 +306,7 @@ const Renderer = {
       const fake = { kind: r.kind, x: -0.5, y: -0.5, ox: 0, oy: 0, v: (vq + 0.5) / 8, amount: (lvl + 0.5) / 3, max: 1 };
       this.drawResourceVector(fake); this.oldSchool(cv);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv: this.freeze(cv), ax, ay, k }; this.sprites.set(key, sp);
+      sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k }); this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
     // picked out under the pointer, and ringed while selected
@@ -432,7 +447,7 @@ const Renderer = {
       const fn = this['shape_' + b.def.shape] || this.shape_house; fn.call(this, fake, age, p);
       this.mat = null; const flags = this.flags; this.flags = null; this.oldSchool(cv, 9, b.def.shape === 'wall'); // wall pieces butt together, so no outline at their ends
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv: this.freeze(cv), ax, ay, k, flags }; this.sprites.set(key, sp);
+      sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k, flags }); this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(b.tx, b.ty, 0);
     this.stamp(sp, sx, sy);
@@ -469,6 +484,9 @@ const Renderer = {
      stalling the GPU, which on Android tablets cost many milliseconds per sprite. The finished sprite is copied once
      to an ordinary canvas that is never read, so stamping it stays on the GPU. */
   freeze(cv) { const out = document.createElement('canvas'); out.width = cv.width; out.height = cv.height; out.getContext('2d').drawImage(cv, 0, 0); return out; },
+  /* Finished sprites are swapped for ImageBitmaps once the browser has made them: an immutable image the GPU keeps,
+     where a small canvas may be kept in software on Android and uploaded again every time it is drawn. */
+  bitmapify(sp) { if (typeof createImageBitmap !== 'function') return sp; createImageBitmap(sp.cv).then((b) => { sp.cv = b; }).catch(() => {}); return sp; },
   stamp(sp, sx, sy, glow) {
     const g = this.g, dpr = this.dpr, sc = (this.cam.zoom * dpr) / sp.k;
     g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = sc < 0.99;
@@ -769,7 +787,7 @@ const Renderer = {
       this.drawUnitVector(u, p, flip ? -1 : 1, walk, sw, pose.tool, swing >= 3);
       this.oldSchool(cv, 8);
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
-      sp = { cv: this.freeze(cv), ax, ay, k }; this.sprites.set(key, sp);
+      sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k }); this.sprites.set(key, sp);
     }
     const [sx, sy] = this.toScreen(u.x, u.y, 0);
     this.stamp(sp, sx, sy); u.spr = sp;

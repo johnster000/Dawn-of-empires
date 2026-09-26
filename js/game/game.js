@@ -75,7 +75,11 @@ const Game = {
         if (guard >= 12) this.acc = 0;
         Perf.add('tick', performance.now() - t0);
       }
-      const t1 = performance.now(); Renderer.draw(this.paused ? 0 : dt); const t2 = performance.now();
+      // paused and untouched: the picture has not changed, so leave it on screen rather than paint it again
+      const camKey = Renderer.cam.x + ',' + Renderer.cam.y + ',' + Renderer.cam.zoom;
+      const still = this.paused && !Renderer.dirty && camKey === this.lastCamKey;
+      this.lastCamKey = camKey; Renderer.dirty = false;
+      const t1 = performance.now(); if (!still) Renderer.draw(this.paused ? 0 : dt); const t2 = performance.now();
       UI.update(dt); const t3 = performance.now();
       Perf.add('draw', t2 - t1); Perf.add('ui', t3 - t2); Perf.frame(ts);
     }
