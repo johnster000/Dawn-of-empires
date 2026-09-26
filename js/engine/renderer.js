@@ -186,26 +186,56 @@ const Renderer = {
     const x0 = Math.max(0, Math.floor(Math.min(c0[0], c1[0], c2[0], c3[0])) - 1), x1 = Math.min(World.w - 1, Math.ceil(Math.max(c0[0], c1[0], c2[0], c3[0])) + 1);
     const y0 = Math.max(0, Math.floor(Math.min(c0[1], c1[1], c2[1], c3[1])) - 1), y1 = Math.min(World.h - 1, Math.ceil(Math.max(c0[1], c1[1], c2[1], c3[1])) + 3);
     this.view = { x0, y0, x1, y1 };
-    if (this.debugOff === 2 || this.debugOff === 4) { g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#0b0a10'; g.fillRect(0, 0, this.canvas.width, this.canvas.height); g.setTransform(dpr, 0, 0, dpr, 0, 0); } else this.drawGround(x0, y0, x1, y1);
-    // collect drawables
-    const list = [];
     const inView = (x, y) => x >= x0 - 2 && x <= x1 + 2 && y >= y0 - 2 && y <= y1 + 2;
-    const reveal = Game.settings.reveal, exp = World.explored, vis = World.visible;
-    for (const r of World.res) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 1 + r.ox + r.oy, k: 'res', o: r });
-    for (const r of World.decals) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) list.push({ d: r.x + r.y + 0.3, k: 'res', o: r });
-    for (const b of Game.buildings) { if (b.dead || !inView(b.x, b.y)) continue; if (!reveal && !exp[World.idx(b.tx, b.ty)] && !exp[World.idx(b.tx + b.size - 1, b.ty + b.size - 1)]) continue; list.push({ d: b.def.passable ? b.tx + b.ty - 0.5 : b.tx + b.ty + b.size, k: 'bld', o: b }); }
-    for (const u of Game.units) { if (u.dead || !inView(u.x, u.y)) continue; if (u.owner !== Game.human && !reveal && !vis[World.idx(Math.floor(u.x), Math.floor(u.y))]) { u.sx = null; continue; } list.push({ d: u.x + u.y, k: 'unit', o: u }); }
-    for (const e of Game.effects) { const ex = e.x != null ? e.x : U.lerp(e.x0, e.x1, e.t / e.dur), ey = e.y != null ? e.y : U.lerp(e.y0, e.y1, e.t / e.dur); if (inView(ex, ey)) list.push({ d: ex + ey + (e.kind === 'corpse' || e.kind === 'rubble' ? -0.4 : 0.6), k: 'fx', o: e }); }
-    if (this.ghost) list.push({ d: this.ghost.tx + this.ghost.ty + this.ghost.def.size, k: 'ghost', o: this.ghost });
-    list.sort((a, b) => a.d - b.d || (a.k === 'fx' ? -1 : 0));
+    const reveal = Game.settings.reveal, exp = World.explored, vis = World.visible, noSprites = this.debugOff === 3 || this.debugOff === 4;
+    /* Things that never move (trees, rocks, stumps, ferns, finished buildings) are painted once into a cached layer
+       with the ground; each frame only draws what moves. Drawing a hundred-odd separate images every frame was what
+       held slower tablets to 15 fps. A fingerprint of what is in view tells when the layer must be painted again. */
+    const stat = [], dyn = []; let h = 17; const mix = (v) => { h = (Math.imul(h, 31) + (v | 0)) | 0; };
+    for (const r of World.res) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) { stat.push({ d: r.x + r.y + 1 + r.ox + r.oy, k: 'res', o: r, occ: r.kind === 'tree' }); mix(r.id * 4 + (r.max ? Math.min(2, Math.floor((r.amount / r.max) * 3)) : 0)); }
+    for (const r of World.decals) if (inView(r.x, r.y) && (reveal || exp[World.idx(r.x, r.y)])) { stat.push({ d: r.x + r.y + 0.3, k: 'res', o: r }); mix(r.x * 977 + r.y); }
+    for (const b of Game.buildings) {
+      if (b.dead || !inView(b.x, b.y)) continue; if (!reveal && !exp[World.idx(b.tx, b.ty)] && !exp[World.idx(b.tx + b.size - 1, b.ty + b.size - 1)]) continue;
+      const d = b.def.passable ? b.tx + b.ty - 0.5 : b.tx + b.ty + b.size;
+      if (!b.built) { dyn.push({ d, k: 'bld', o: b }); continue; }
+      stat.push({ d, k: 'bld', o: b, occ: !b.def.passable });
+      mix(b.id); mix(b.ageVisual); mix(b.owner); mix(b.def.farm && b.worker && !b.worker.dead ? 1 : 0); mix(b.def.wall ? World.wallMask(b) : 0);
+      dyn.push({ d: d + 0.001, k: 'live', o: b });
+    }
+    mix(stat.length);
+    const cw = this.canvas.width, ch = this.canvas.height;
+    const skey = [this.cam.x, this.cam.y, this.cam.zoom, cw, ch, dpr, this.terrainVer, x0, y0, x1, y1, h, this.debugOff].join(',');
+    if (!this.staticCv || this.staticCv.width !== cw || this.staticCv.height !== ch) { this.staticCv = document.createElement('canvas'); this.staticCv.width = cw; this.staticCv.height = ch; this.staticKey = ''; }
+    if (skey !== this.staticKey) { this.paintStatic(stat, x0, y0, x1, y1, noSprites); this.staticKey = skey; this.staticPaints = (this.staticPaints || 0) + 1; }
+    g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(this.staticCv, 0, 0); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.debugOff !== 2 && this.debugOff !== 4) this.drawRipples(x0, y0, x1, y1);
+    // what moves
+    for (const u of Game.units) { if (u.dead || !inView(u.x, u.y)) continue; if (u.owner !== Game.human && !reveal && !vis[World.idx(Math.floor(u.x), Math.floor(u.y))]) { u.sx = null; continue; } dyn.push({ d: u.x + u.y, k: 'unit', o: u }); }
+    for (const e of Game.effects) { const ex = e.x != null ? e.x : U.lerp(e.x0, e.x1, e.t / e.dur), ey = e.y != null ? e.y : U.lerp(e.y0, e.y1, e.t / e.dur); if (inView(ex, ey)) dyn.push({ d: ex + ey + (e.kind === 'corpse' || e.kind === 'rubble' ? -0.4 : 0.6), k: 'fx', o: e }); }
+    if (this.ghost) dyn.push({ d: this.ghost.tx + this.ghost.ty + this.ghost.def.size, k: 'ghost', o: this.ghost });
+    for (const r of [Game.selectedRes, this.hoverRes]) if (r && !r.removed && inView(r.x, r.y)) dyn.push({ d: r.x + r.y + 1 + r.ox + r.oy + 0.001, k: 'hl', o: r });
+    // a tree or building standing in front of someone is drawn again over them, clipped to their outline
+    const z = this.cam.zoom;
+    for (const it of dyn) {
+      if (it.k !== 'unit') continue;
+      const u = it.o, [sx, sy] = this.toScreen(u.x, u.y, 0), hw = (u.def.naval ? 34 : u.def.cls === 'cavalry' || u.def.cls === 'siege' ? 22 : 14) * z, top = sy - (u.def.naval ? 50 : u.def.cls === 'cavalry' ? 52 : 42) * z, bot = sy + 6 * z;
+      const seen = new Set();
+      for (const s of this.occludersNear(sx - hw, top, sx + hw, bot)) {
+        if (seen.has(s) || s.d <= it.d) continue; seen.add(s);
+        dyn.push({ d: s.d, k: 'occ', o: s, clip: [sx - hw, top, hw * 2, bot - top] });
+      }
+    }
+    dyn.sort((a, b) => a.d - b.d || (a.k === 'fx' ? -1 : 0));
     // selection rings first so they sit under feet
     for (const u of Game.selection) if (u.kind === 'unit' && !u.dead) this.drawRing(u);
-    if (this.debugOff !== 3 && this.debugOff !== 4) for (const it of list) {
-      if (it.k === 'res') this.drawResource(it.o);
-      else if (it.k === 'bld') this.drawBuilding(it.o);
+    if (!noSprites) for (const it of dyn) {
+      if (it.k === 'bld') this.drawBuilding(it.o);
+      else if (it.k === 'live') this.drawBuilding(it.o, 'live');
       else if (it.k === 'unit') this.drawUnit(it.o);
       else if (it.k === 'fx') this.drawEffect(it.o);
       else if (it.k === 'ghost') this.drawGhost(it.o);
+      else if (it.k === 'hl') this.drawResource(it.o, 'hl');
+      else if (it.k === 'occ') { const c = it.clip, s2 = it.o; g.save(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.beginPath(); g.rect(c[0], c[1], c[2], c[3]); g.clip(); this.stamp(s2.sp, s2.sx, s2.sy); g.restore(); }
     }
     // your own people show through whatever hides them, as a faint silhouette
     for (const u of Game.units) if (!u.dead && u.owner === Game.human && u.spr && u.sx != null && inView(u.x, u.y) && this.occluded(u)) { g.globalAlpha = 0.5; this.stamp(u.spr, u.sx, u.sy); g.globalAlpha = 1; }
@@ -220,6 +250,32 @@ const Renderer = {
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.lineWidth = 1;
     for (const [inset, col] of [[0.5, '#000'], [1.5, '#000'], [2.5, '#3a3040'], [3.5, '#000']]) { g.strokeStyle = col; g.strokeRect(inset, inset, this.W - inset * 2, this.H - inset * 2); }
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = 0.4; this.drawMinimap(); }
+  },
+  staticCv: null, staticKey: '', occGrid: null,
+  paintStatic(stat, x0, y0, x1, y1, noSprites) {
+    const main = this.g, sg = this.g = this.staticCv.getContext('2d'), dpr = this.dpr, cw = this.staticCv.width, ch = this.staticCv.height;
+    if (this.debugOff === 2 || this.debugOff === 4) { sg.setTransform(1, 0, 0, 1, 0, 0); sg.fillStyle = '#0b0a10'; sg.fillRect(0, 0, cw, ch); sg.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    else this.drawGround(x0, y0, x1, y1);
+    stat.sort((a, b) => a.d - b.d);
+    // screen cells (64 px) listing the things that can hide a unit, for the per-frame occlusion test
+    const grid = this.occGrid = new Map(), C = 64, z = this.cam.zoom;
+    for (const it of stat) {
+      const sp = it.k === 'res' ? this.resSprite(it.o) : this.bldSprite(it.o);
+      const [sx, sy] = it.k === 'res' ? this.toScreen(it.o.x + 0.5 + (it.o.ox || 0), it.o.y + 0.5 + (it.o.oy || 0), 0) : this.toScreen(it.o.tx, it.o.ty, 0);
+      if (!noSprites) this.stamp(sp, sx, sy);
+      if (!it.occ) continue;
+      it.sp = sp; it.sx = sx; it.sy = sy;
+      const l = sx - sp.ax * z, t = sy - sp.ay * z, r = l + sp.cv.width * z, b = t + sp.cv.height * z; it.rect = [l, t, r, b];
+      for (let gx = Math.floor(l / C); gx <= Math.floor(r / C); gx++) for (let gy = Math.floor(t / C); gy <= Math.floor(b / C); gy++) { const k = gx * 4096 + gy; let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(it); }
+    }
+    this.g = main;
+  },
+  *occludersNear(l, t, r, b) {
+    const grid = this.occGrid; if (!grid) return; const C = 64;
+    for (let gx = Math.floor(l / C); gx <= Math.floor(r / C); gx++) for (let gy = Math.floor(t / C); gy <= Math.floor(b / C); gy++) {
+      const a = grid.get(gx * 4096 + gy); if (!a) continue;
+      for (const s of a) { const q = s.rect; if (q[0] < r && q[2] > l && q[1] < b && q[3] > t) yield s; }
+    }
   },
   /* Draw a per-tile image (`ppt` pixels per tile) so that tile (x, y) lands on its diamond. */
   drawMapImage(img, ppt, x0, y0, x1, y1, smooth) {
@@ -251,6 +307,11 @@ const Renderer = {
       this.g = main; this.groundKey = key;
     }
     const g = this.g; g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(this.groundCv, 0, 0); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  },
+  /* Moving water, drawn live over the cached layer: light dashes that drift, brighter in the shallows, foam at the
+     shoreline. Skipped beside trees and buildings, whose sprites can hang over the water. */
+  drawRipples(x0, y0, x1, y1) {
+    const g = this.g, s = this.cam.zoom, T = World.T, w = World.w;
     if (s < 0.7) return;
     // moving water: light dashes that drift, brighter and denser in the shallows, foam at the shoreline
     const hw = 32 * s, hh = 16 * s, reveal = Game.settings.reveal, vis = World.visible, tiles = World.tiles;
@@ -262,6 +323,8 @@ const Renderer = {
     for (let y = y0; y <= y1 && n < 700; y++) for (let x = x0; x <= x1; x++) {
       const i = y * w + x;
       if (tiles[i] !== 1 || !(reveal || vis[i])) continue;
+      let near = false; for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) { const j = i + dy * w + dx, r = World.resAt[j]; if ((r && r.kind === 'tree') || World.bld[j]) { near = true; break; } }
+      if (near) continue;
       const [sx, sy] = this.toScreen(x + 0.5, y + 0.5, 0);
       const hsh = ((x * 73856093) ^ (y * 19349663)) >>> 0;
       const drift = ((this.time * 6 + (hsh % 64)) % 64) - 32;
@@ -293,7 +356,19 @@ const Renderer = {
   dimIf() { return true; },
 
   /* ---- natural resources: vector art rendered once per look and zoom step, then stamped ---- */
-  drawResource(r) {
+  drawResource(r, mode) {
+    const sp = this.resSprite(r), [sx, sy] = this.toScreen(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
+    if (mode !== 'hl') { this.stamp(sp, sx, sy); if (mode === 'static') return; }
+    // picked out under the pointer, and ringed while selected
+    const sel = Game.selectedRes === r, hov = this.hoverRes === r;
+    if (sel || hov) {
+      this.at(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
+      this.g.lineWidth = sel ? 1.6 : 1.2;
+      this.ell(0, 1, 13, 6.5, sel ? 'rgba(232,196,106,0.16)' : null, sel ? '#f4e2a0' : 'rgba(244,226,160,0.55)');
+      this.stamp(sp, sx, sy, sel ? 0.26 : 0.14);
+    }
+  },
+  resSprite(r) {
     const z = this.cam.zoom, zq = this.zq(z);
     const vq = Math.floor(r.v * 8), lvl = r.max ? Math.min(2, Math.floor((r.amount / r.max) * 3)) : 0;
     const key = r.kind + '|' + vq + '|' + lvl;
@@ -308,16 +383,7 @@ const Renderer = {
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
       sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k }); this.sprites.set(key, sp);
     }
-    const [sx, sy] = this.toScreen(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
-    // picked out under the pointer, and ringed while selected
-    const sel = Game.selectedRes === r, hov = this.hoverRes === r;
-    if (sel || hov) {
-      this.at(r.x + 0.5 + (r.ox || 0), r.y + 0.5 + (r.oy || 0), 0);
-      this.g.lineWidth = sel ? 1.6 : 1.2;
-      this.ell(0, 1, 13, 6.5, sel ? 'rgba(232,196,106,0.16)' : null, sel ? '#f4e2a0' : 'rgba(244,226,160,0.55)');
-    }
-    this.stamp(sp, sx, sy);
-    if (sel || hov) this.stamp(sp, sx, sy, sel ? 0.26 : 0.14);
+    return sp;
   },
   /* A small picture of a resource for the selection panel. */
   resPortrait(kind, size) {
@@ -429,9 +495,20 @@ const Renderer = {
   },
 
   /* ---- buildings: static art cached per look and zoom step; flags and smoke drawn live ---- */
-  drawBuilding(b) {
-    const g = this.g, p = Game.players[b.owner], age = AGES[b.ageVisual] || AGES[0];
+  drawBuilding(b, mode) {
+    const p = Game.players[b.owner], age = AGES[b.ageVisual] || AGES[0];
     if (!b.built) { this.at(b.tx, b.ty, 0); this.drawSite(b, age); return; }
+    const sp = this.bldSprite(b), s = b.size;
+    if (mode !== 'live') { const [sx, sy] = this.toScreen(b.tx, b.ty, 0); this.stamp(sp, sx, sy); if (mode === 'static') return; }
+    // live parts
+    this.at(b.tx, b.ty, 0);
+    // each shape says where its poles stand while it is drawn, so the cloth waves from the roof it belongs to
+    const col = p.color.main, sh = b.def.shape;
+    for (const f of sp.flags || []) this.flag(this.P(f[0], f[1], f[2]), col);
+    if (sh === 'smithy') this.smithySmoke();
+  },
+  bldSprite(b) {
+    const p = Game.players[b.owner], age = AGES[b.ageVisual] || AGES[0];
     const z = this.cam.zoom, zq = this.zq(z), s = b.size;
     const grown = b.def.farm ? (b.worker && !b.worker.dead ? 1 : 0) : 0;
     const mask = b.def.wall ? World.wallMask(b) : 0;
@@ -449,14 +526,10 @@ const Renderer = {
       this.g = saveG; this.cam = saveCam; this.dpr = saveDpr; this.W = saveW; this.H = saveH;
       sp = this.bitmapify({ cv: this.freeze(cv), ax, ay, k, flags }); this.sprites.set(key, sp);
     }
-    const [sx, sy] = this.toScreen(b.tx, b.ty, 0);
-    this.stamp(sp, sx, sy);
-    // live parts
-    this.at(b.tx, b.ty, 0);
-    // each shape says where its poles stand while it is drawn, so the cloth waves from the roof it belongs to
-    const col = p.color.main, sh = b.def.shape;
-    for (const f of sp.flags || []) this.flag(this.P(f[0], f[1], f[2]), col);
-    if (sh === 'smithy') { const c = this.P(0.65, 0.55, 52); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(0.8, 1.4, 9); this.ell(w[0], w[1], 5, 3, `rgba(255,140,40,${0.45 + 0.3 * Math.sin(this.time * 7)})`); }
+    return sp;
+  },
+  smithySmoke() {
+    const c = this.P(0.65, 0.55, 52); for (let k = 0; k < 3; k++) { const t = (this.time * 0.5 + k / 3) % 1; this.ell(c[0] + Math.sin(t * 6) * 3, c[1] - t * 22, 4 + t * 5, 3 + t * 3, `rgba(200,200,210,${0.35 * (1 - t)})`); } const w = this.P(0.8, 1.4, 9); this.ell(w[0], w[1], 5, 3, `rgba(255,140,40,${0.45 + 0.3 * Math.sin(this.time * 7)})`); 
   },
   /* Sprites are rasterised once, at one texel per zoom-1 pixel, whatever the zoom: changing zoom never redraws
      anything. Zoomed in they are stamped with nearest-neighbour scaling for the chunky pre-rendered look;
